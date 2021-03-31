@@ -156,7 +156,6 @@ class Dashboard(object):
         task["queued"] = self.time()
         task["status"] = "queued"
         self.metric_queued += 1
-        self.update_workers(task)
         self.push()
 
     def post_started(self, task):
