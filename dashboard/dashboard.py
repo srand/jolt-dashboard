@@ -27,10 +27,17 @@ def TaskList(id):
     columns = ["name", "identity", "queued", "started", "ended", "status", "worker"]
     return html.Div(dash_table.DataTable(
         id=id,
-        columns=[{"name": i, "id": i} for i in columns],
+        columns=[{"name": i.title(), "id": i} for i in columns],
         data=[],
         filter_action="native",
-        style_table={"width": "100%"}
+        style_table={"width": "100%", "textAlign": "left"},
+        style_cell={"textAlign": "center", 'textOverflow': 'ellipsis'},
+        style_cell_conditional=[
+            {'if': {'column_id': 'name'}, 'width': '30%', "textAlign": "left"},
+            {'if': {'column_id': 'identity'}, 'width': '15%'},
+            {'if': {'column_id': 'worker'}, 'width': '20%', "textAlign": "left"},
+            #{'if': {'column_id': 'Region'}, 'width': '30%'},
+        ],
     ), className="w3-container w3-padding")
 
 
@@ -38,10 +45,18 @@ def WorkerList(id):
     columns = ["name", "task", "identity", "started"]
     return  html.Div(dash_table.DataTable(
         id=id,
-        columns=[{"name": i, "id": i} for i in columns],
+        columns=[{"name": i.title(), "id": i} for i in columns],
         data=[],
         filter_action="native",
-        style_table={"width": "100%"}
+        style_table={"width": "100%"},
+        style_cell={"textAlign": "center"},
+        style_cell_conditional=[
+            {'if': {'column_id': 'worker'}, 'width': '20%', "textAlign": "left"},
+            {'if': {'column_id': 'task'}, 'width': '40%', "textAlign": "left"},
+            {'if': {'column_id': 'identity'}, 'width': '25%'},
+            {'if': {'column_id': 'started'}, 'width': '15%'},
+            #{'if': {'column_id': 'Region'}, 'width': '30%'},
+        ],
     ), className="w3-container w3-padding")
 
 
