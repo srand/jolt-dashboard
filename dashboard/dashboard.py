@@ -195,6 +195,10 @@ class Dashboard(object):
         self.push()
 
     def push(self):
+        self.push_timer = Timer(1, self.push_callback)
+        self.push_timer.start()
+
+    def push_callback(self):
         app.push_mods({
             'metric_tasks_queued': {'children': self.metric_queued},
             'metric_tasks_running': {'children': self.metric_running},
@@ -235,30 +239,26 @@ dashboard = Dashboard(app)
 
 
 @app.server.route('/api/v1/task/queued', methods=['POST'])
-def queued():
-    data = asyncio.run(request.get_data())
-    data = json.loads(data)
+async def queued():
+    data = await request.get_json()
     dashboard.post_queued(data)
     return ""
 
 @app.server.route('/api/v1/task/started', methods=['POST'])
-def started():
-    data = asyncio.run(request.get_data())
-    data = json.loads(data)
+async def started():
+    data = await request.get_json()
     dashboard.post_started(data)
     return ""
 
 @app.server.route('/api/v1/task/finished', methods=['POST'])
-def finished():
-    data = asyncio.run(request.get_data())
-    data = json.loads(data)
+async def finished():
+    data = await request.get_json()
     dashboard.post_finished(data)
     return ""
 
 @app.server.route('/api/v1/task/failed', methods=['POST'])
-def failed():
-    data = asyncio.run(request.get_data())
-    data = json.loads(data)
+async def failed():
+    data = await request.get_json()
     dashboard.post_failed(data)
     return ""
 

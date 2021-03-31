@@ -1,9 +1,12 @@
+#!/usr/bin/python
+
 import requests
 import random
 import time
 import uuid
 import json
 import hashlib
+import sys
 
 def sha1(data):
     sha = hashlib.sha1()
@@ -16,6 +19,10 @@ def randitem(lst):
 workers = ["worker-" + str(i) for i in range(5)]
 taskname = ["onion", "cucumber", "orange", "banana", "apple", "squash", "gridlock", "majo"]
 
+try:
+    url = sys.argv[1]
+except:
+    url = "localhost:5000"
 
 class Task:
     def __init__(self):
@@ -27,7 +34,7 @@ class Task:
 
     def post(self, endpoint):
         try:
-            r = requests.post("http://localhost:5000/api/v1/"+endpoint, json={
+            r = requests.post("http://" + url + "/api/v1/" + endpoint, json={
                 "name": self.name,
                 "identity": self.identity,
                 "uuid": self.uuid,
