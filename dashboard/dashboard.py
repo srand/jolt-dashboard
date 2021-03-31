@@ -264,4 +264,5 @@ def failed():
 
 
 if __name__ == '__main__':
-    app.run_server(debug=os.getenv("RELEASE", "false") not in ["true", "1"], host='0.0.0.0', port=5000)
+    release = os.getenv("RELEASE", "true") in ["true", "1"]
+    app.run_server(debug=not release , host='0.0.0.0', port=80 if release else 5000)
