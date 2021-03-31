@@ -25,24 +25,24 @@ def MetricCard(label, id):
 
 def TaskList(id):
     columns = ["name", "identity", "queued", "started", "ended", "status", "worker"]
-    return dash_table.DataTable(
+    return html.Div(dash_table.DataTable(
         id=id,
         columns=[{"name": i, "id": i} for i in columns],
         data=[],
         filter_action="native",
         style_table={"width": "100%"}
-    )
+    ), className="w3-container w3-padding")
 
 
 def WorkerList(id):
     columns = ["name", "task", "identity", "started"]
-    return dash_table.DataTable(
+    return  html.Div(dash_table.DataTable(
         id=id,
         columns=[{"name": i, "id": i} for i in columns],
         data=[],
         filter_action="native",
         style_table={"width": "100%"}
-    )
+    ), className="w3-container w3-padding")
 
 
 def Tabs(tabs):
@@ -51,7 +51,15 @@ def Tabs(tabs):
     for name, content in tabs:
         children.append(dcc.Tab(children=content, label=name, value='tab-'+str(i), style=tab_style, selected_style=tab_selected_style, className='w3-cell-row'))
         i += 1
-    return dcc.Tabs(id='tabs-example', value='tab-1', className="w3-cell-row", parent_className='w3-cell-row', content_className='w3-cell-row w3-padding', children=children, style=tabs_styles)
+    return dcc.Tabs(id='tabs', value='tab-1', className="w3-cell-row", parent_className='w3-cell-row', content_className='w3-cell-row', children=children, style=tabs_styles)
+
+def SubTabs(tabs, id):
+    children = []
+    i = 1
+    for name, content in tabs:
+        children.append(dcc.Tab(children=content, label=name, value='tab-'+str(i), style=subtab_style, selected_style=subtab_selected_style, className='w3-cell-row'))
+        i += 1
+    return dcc.Tabs(id=id, value='tab-1', className="w3-cell-row", parent_className='w3-cell-row', content_className='w3-cell-row', children=children, style=tabs_styles)
 
 
 tabs_styles = {
@@ -71,6 +79,14 @@ tab_style = {
     'width': "200px"
 }
 
+subtab_style = {
+    'backgroundColor': '#f6f6f6',
+    #'borderTop': '1px solid #d6d6d6',
+    #'borderBottom': '1px solid #d6d6d6',
+    'padding': '8px',
+    'width': "100px"
+}
+
 tab_selected_style = {
     'borderTop': '1px solid #d6d6d6',
     #'borderBottom': '1px solid #d6d6d6',
@@ -81,6 +97,15 @@ tab_selected_style = {
     'width': "200px"
 }
 
+subtab_selected_style = {
+    'borderTop': '1px solid #d6d6d6',
+    #'borderBottom': '1px solid #d6d6d6',
+    'backgroundColor': '#c00000',
+    'fontWeight': 'bold',
+    'color': 'white',
+    'padding': '8px',
+    'width': "100px"
+}
 
 
 app.layout = html.Div([
@@ -97,7 +122,10 @@ app.layout = html.Div([
     html.Div(
         Tabs(
             [
-                ("Tasks", TaskList(id="tasklist")),
+                ("Tasks", SubTabs([
+                    ("Live 100", TaskList(id="tasklist_live")),
+                    ("Last Hour", TaskList(id="tasklist")),
+                ], id="tabs-tasks")),
                 ("Workers", WorkerList(id="workerlist"))
             ]
         )
@@ -121,8 +149,16 @@ class Dashboard(object):
         self.timer = Timer(self.timeout, self.prune_tasks)
         self.timer.start()
 
+        # Start push timer
+        self.push_requested = False
+        self.push_callback()
+
     def callbacks(self):
-        pass
+        @app.callback(Output('tasklist', 'data'),
+              [Input('tabs-tasks', 'value')])
+        def render_content(tab):
+            return self.tasks
+
 
     def time(self):
         return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -144,7 +180,7 @@ class Dashboard(object):
             worker["identity"] = task["identity"]
             worker["started"] = task["started"]
         else:
-            worker["task"] = "<idle>"
+            worker["task"] = ""
             worker["identity"] = ""
             worker["started"] = ""
         dbworker = self.workers.get(task["worker"], {})
@@ -164,9 +200,12 @@ class Dashboard(object):
         task["status"] = "running"
         if task.get("queued"):
             self.metric_queued -= 1
+        else:
+            task["queued"] = task["started"]
         self.metric_running += 1
         self.update_workers(task)
         self.push()
+
 
     def post_finished(self, task):
         task = self.find(task)
@@ -176,6 +215,10 @@ class Dashboard(object):
             self.metric_running -= 1
         elif task.get("queued"):
             self.metric_queued -= 1
+            task["started"] = task["ended"]
+        else:
+            task["queued"] = task["ended"]
+            task["started"] = task["ended"]
         self.metric_completed += 1
         self.update_workers(task)
         self.push()
@@ -188,22 +231,29 @@ class Dashboard(object):
             self.metric_running -= 1
         elif task.get("queued"):
             self.metric_queued -= 1
+            task["started"] = task["ended"]
+        else:
+            task["queued"] = task["ended"]
+            task["started"] = task["ended"]
         self.metric_failed += 1
         self.metric_completed += 1
         self.update_workers(task)
         self.push()
 
     def push(self):
-        self.push_timer = Timer(1, self.push_callback)
-        self.push_timer.start()
+        self.push_requested = True
 
     def push_callback(self):
+        self.push_timer = Timer(2, self.push_callback)
+        self.push_timer.start()
+        if not self.push_requested:
+            return
         app.push_mods({
             'metric_tasks_queued': {'children': self.metric_queued},
             'metric_tasks_running': {'children': self.metric_running},
             'metric_tasks_failed': {'children': self.metric_failed},
             'metric_tasks_completed': {'children': self.metric_completed},
-            'tasklist': {'data': self.tasks},
+            'tasklist_live': {'data': self.tasks[0:100]},
             'workerlist': {'data': sorted(self.workers.values(), key=lambda w: w["name"])}
         })
 
