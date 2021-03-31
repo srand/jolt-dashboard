@@ -7,6 +7,7 @@ from datetime import datetime
 import time
 import asyncio
 import json
+import os
 from quart import request
 from threading import Timer
 
@@ -263,4 +264,4 @@ def failed():
 
 
 if __name__ == '__main__':
-    app.run_server(debug=True, host='0.0.0.0', port=5000)
+    app.run_server(debug=os.getenv("RELEASE", "false") not in ["true", "1"], host='0.0.0.0', port=5000)
