@@ -217,7 +217,7 @@ class Dashboard(object):
             dbtask = task
             self.tasks.insert(0, dbtask)
             self.tasks_index[task["instance"]] = dbtask
-        if not task["client"]:
+        if task["role"] == "worker":
             dbtask["worker"] = task["hostname"]
         return dbtask
 
