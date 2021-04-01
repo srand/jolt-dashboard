@@ -3,6 +3,7 @@ import dash_table
 from dash_devices.dependencies import Input, Output
 import dash_html_components as html
 import dash_core_components as dcc
+import dash_daq as daq
 from datetime import datetime
 import time
 import asyncio
@@ -137,6 +138,11 @@ app.layout = html.Div([
     html.Div(
         Tabs(
             [
+                ("Overview", [
+                    html.Div([
+                        daq.Gauge(id='metric_cluster_load', label="Cluster Load", value=0, max=0, scale={'start': 0, 'interval': 1, 'labelInterval': 2}),
+                    ], className="w3-container w3-padding"),
+                ]),
                 ("Tasks", SubTabs([
                     ("Live 100", TaskList(id="tasklist_live")),
                     ("Last Hour", TaskList(id="tasklist")),
@@ -186,6 +192,16 @@ class Dashboard(object):
             self.tasks_index[task["uuid"]] = dbtask
         dbtask["worker"] = task["worker"]
         return dbtask
+
+    @property
+    def metric_worker_count(self):
+        return len(self.workers)
+
+    @property
+    def metric_worker_load(self):
+        if not self.workers:
+            return 0
+        return sum(map(lambda w: 1 if w["task"] else 0, self.workers.values()))
 
     def update_workers(self, task):
         worker = {}
@@ -264,11 +280,12 @@ class Dashboard(object):
         if not self.push_requested:
             return
         app.push_mods({
+            'metric_cluster_load': {'value': self.metric_worker_load, 'max': self.metric_worker_count},
             'metric_tasks_queued': {'children': self.metric_queued},
             'metric_tasks_running': {'children': self.metric_running},
             'metric_tasks_failed': {'children': self.metric_failed},
             'metric_tasks_completed': {'children': self.metric_completed},
-            'tasklist_live': {'data': self.tasks[0:100]},
+            'tasklist_live': {'data': self.tasks_live},
             'workerlist': {'data': sorted(self.workers.values(), key=lambda w: w["name"])}
         })
 
@@ -276,6 +293,10 @@ class Dashboard(object):
         last_seen = task.get("queued") or task.get("started") or task.get("ended")
         last_seen = datetime.strptime(last_seen, "%Y-%m-%d %H:%M:%S").timestamp()
         return datetime.now().timestamp() - last_seen < seconds
+
+    @property
+    def tasks_live(self):
+        return list(filter(lambda t: not t.get("ended"), self.tasks))
 
     def prune_tasks(self):
         alive = []
