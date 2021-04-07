@@ -22,41 +22,42 @@ taskname = ["onion", "cucumber", "orange", "banana", "apple", "squash", "gridloc
 try:
     url = sys.argv[1]
 except:
-    url = "localhost:5000"
+    url = "localhost"
 
 class Task:
     def __init__(self):
         self.name = randitem(taskname)
         self.identity = sha1(str(uuid.uuid4()))
-        self.uuid = str(uuid.uuid4())
+        self.instance = str(uuid.uuid4())
         self.worker = randitem(workers)
         self.started = False
 
-    def post(self, endpoint):
+    def post(self, event):
         try:
-            r = requests.post("http://" + url + "/api/v1/" + endpoint, json={
+            r = requests.post("http://" + url + "/api/v1/tasks", json={
                 "name": self.name,
                 "identity": self.identity,
-                "uuid": self.uuid,
-                "worker": self.worker,
+                "instance": self.instance,
+                "hostname": self.worker,
+                "event": event,
+                "role": "worker" if event != "queued" else "client",
             })
             r.raise_for_status()
         except Exception as e:
             print(e)
-            print(endpoint, "failed")
 
     def post_queued(self):
-        self.post("task/queued")
+        self.post("queued")
 
     def post_started(self):
-        self.post("task/started")
+        self.post("started")
         self.started = True
 
     def post_finished(self):
-        self.post("task/finished")
+        self.post("finished")
 
     def post_failed(self):
-        self.post("task/failed")
+        self.post("failed")
 
 
 
@@ -77,4 +78,4 @@ while True:
         tasks[i] = task = Task()
         task.post_queued()
 
-    time.sleep(0.2)
+    #time.sleep(0.2)
