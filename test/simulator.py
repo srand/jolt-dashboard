@@ -35,12 +35,12 @@ class Task:
     def post(self, event):
         try:
             r = requests.post("http://" + url + "/api/v1/tasks", json={
-                "name": self.name,
+                "event": event,
+                "hostname": self.worker,
                 "identity": self.identity,
                 "instance": self.instance,
-                "hostname": self.worker,
-                "event": event,
-                "role": "worker" if event != "queued" else "client",
+                "name": self.name,
+                "role": "client" if event == "queued" else "worker",
             })
             r.raise_for_status()
         except Exception as e:
