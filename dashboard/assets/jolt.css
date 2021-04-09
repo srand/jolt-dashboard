@@ -2,3 +2,53 @@
     width: 150px;
     height: 100px;
 }
+
+.jolt-tabs {
+    width: 100%;
+    border-top: 1px solid #d6d6d6;
+    border-bottom: 1px solid #d6d6d6;
+    background-color: #f8f8f8;
+}
+
+.jolt-tab {
+    background-color: #f6f6f6 !important;
+    border-top: none !important;
+    border-bottom: none !important;
+    padding: 16px !important;
+    width: 200px !important;
+}
+
+.jolt-tab--selected {
+    border-top: 1px solid #d6d6d6 !important;
+    background-color: #c00000 !important;
+    font-weight: bold !important;
+    color: white !important;
+    padding: 16px !important;
+    width: 200px !important;
+}
+
+.jolt-tabs-small {
+    width: 100%;
+    border-top: none;
+    border-bottom: 1px solid #d6d6d6;
+    background-color: #f8f8f8;
+}
+
+.jolt-tab-small {
+    background-color: #f6f6f6 !important;
+    border-top: none !important;
+    border-bottom: none !important;
+    padding: 8px !important;
+    width: 100px !important;
+    font-size: 10pt !important;
+}
+
+.jolt-tab-small--selected {
+    border-top: 1px solid #d6d6d6 !important;
+    background-color: #c00000 !important;
+    font-weight: bold !important;
+    color: white !important;
+    padding: 8px !important;
+    width: 100px !important;
+    font-size: 10pt !important;
+}
