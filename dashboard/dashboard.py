@@ -174,8 +174,8 @@ def deduplicate(func):
 def locked(func):
     @functools.wraps(func)
     def decorator(self, *args, **kwargs):
-        with self.lock:
-            return func(self, *args, **kwargs)
+        #with self.lock:
+        return func(self, *args, **kwargs)
     return decorator
 
 
