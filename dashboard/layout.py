@@ -49,6 +49,17 @@ def WorkerList(id):
     ), className="w3-container w3-padding")
 
 
+
+def WorkerLog(id):
+    return  html.Div([
+        html.Pre(id="log"),
+    ], className="w3-container w3-padding")
+
+
+def WorkerContent(id):
+    return html.Div(id=id, className="w3-container")
+
+
 def Tabs(tabs):
     children = []
     i = 1
@@ -95,8 +106,9 @@ def SmallTabs(tabs, id):
 
 def Main():
     return html.Div([
+        dcc.Location(id='url', refresh=False),
         html.Div([
-            html.Div(html.Img(src="assets/jolt.png"),
+            html.Div(html.Img(src="/assets/jolt.png"),
                      className="w3-container w3-cell w3-margin w3-padding w3-center jolt-box"),
             MetricCard("In Queue", "metric_tasks_queued"),
             MetricCard("In Progress", "metric_tasks_running"),
@@ -118,8 +130,14 @@ def Main():
                         ("Live", TaskList(id="tasklist_live", columns=["worker", "name", "identity", "queued", "started", "status"])),
                         ("Last Hour", TaskList(id="tasklist")),
                     ], id="tabs-tasks")),
-                    ("Workers", WorkerList(id="workerlist"))
+                    ("Workers", WorkerContent(id="workercontent"))
                 ]
             )
             , className="w3-cell-row w3-white"),
     ], className="w3-light-gray")
+
+
+index = Main()
+
+workerlog = WorkerLog(id="workerlog")
+workerlist = WorkerList(id="workerlist")

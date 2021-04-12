@@ -9,6 +9,9 @@ import os
 from quart import request
 from threading import Lock, Timer
 
+#############################################################################
+
+import cluster
 import layout
 
 app = dash_devices.Dash(__name__)
@@ -109,10 +112,12 @@ class Dashboard(object):
             worker["task"] = task["name"]
             worker["identity"] = task["identity"]
             worker["started"] = task["started"]
+            worker["log"] = "[Log](/logs/{})".format(worker["name"])
         else:
             worker["task"] = ""
             worker["identity"] = ""
             worker["started"] = ""
+            worker["log"] = ""
         dbworker = self.workers.get(task["worker"], {})
         dbworker.update(worker)
         self.workers[task["worker"]] = dbworker
@@ -257,6 +262,17 @@ async def queued():
     elif data["event"] == "finished":
         dashboard.post_finished(data)
     return ""
+
+
+@app.server.route('/api/v1/logs/<worker>')
+async def log(worker):
+    headers = {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Transfer-Encoding': 'chunked'
+    }
+
+    return cluster.logs(worker), headers
 
 
 if __name__ == '__main__':
