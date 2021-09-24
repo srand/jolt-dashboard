@@ -52,3 +52,11 @@
     width: 100px !important;
     font-size: 10pt !important;
 }
+
+.jolt-half-width {
+    width: 50%;
+}
+
+.modebar{
+    display: none !important;
+}

@@ -107,6 +107,11 @@ def SmallTabs(tabs, id):
 def Main():
     return html.Div([
         dcc.Location(id='url', refresh=False),
+        dcc.Interval(
+            id='interval',
+            interval=10*1000, # in milliseconds
+            n_intervals=0
+        ),
         html.Div([
             html.Div(html.Img(src="/assets/jolt.png"),
                      className="w3-container w3-cell w3-margin w3-padding w3-center jolt-box"),
@@ -120,17 +125,15 @@ def Main():
                 [
                     ("Overview", [
                         html.Div([
-                            daq.Gauge(id='metric_cluster_load',
-                                      label="Cluster Load",
-                                      value=0, max=0,
-                                      scale={'start': 0, 'interval': 1, 'labelInterval': '5'}),
-                        ], className="w3-container w3-padding"),
+                            dcc.Graph(id="graph_queue", className="w3-container w3-cell jolt-half-width"),
+                            dcc.Graph(id="graph_completed", className="w3-container w3-cell jolt-half-width"),
+                        ], className="w3-cell-row w3-padding"),
                     ]),
                     ("Tasks", SmallTabs([
-                        ("Live", TaskList(id="tasklist_live", columns=["worker", "name", "identity", "queued", "started", "status"])),
-                        ("Last Hour", TaskList(id="tasklist")),
+                        ("Active", TaskList(id="tasklist_live", columns=["worker", "name", "identity", "queued", "started", "status"])),
+                        ("Completed", TaskList(id="tasklist")),
                     ], id="tabs-tasks")),
-                    ("Workers", WorkerContent(id="workercontent"))
+                    ("Workers", WorkerList(id="workerlist"))
                 ]
             )
             , className="w3-cell-row w3-white"),
@@ -138,6 +141,3 @@ def Main():
 
 
 index = Main()
-
-workerlog = WorkerLog(id="workerlog")
-workerlist = WorkerList(id="workerlist")

@@ -1,5 +1,5 @@
-import requests_unixsocket
-import aiohttp
+#import requests_unixsocket
+#import aiohttp
 
 async def logs_docker(worker):
     worker = worker.rsplit(".")[-1].rsplit("-")[-1]

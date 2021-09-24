@@ -1,20 +1,21 @@
-import dash_devices
-from dash_devices.dependencies import Input, Output
-from datetime import datetime
+import dash
+from dash.dependencies import Input, Output
+import plotly.express as px
+
+from datetime import datetime, timedelta
 import functools
-import time
-import asyncio
-import json
 import os
-from quart import request
 from threading import Lock, Timer
+import flask
+import sqlite3
+import contextlib
 
 #############################################################################
 
 import cluster
 import layout
 
-app = dash_devices.Dash(__name__)
+app = dash.Dash(__name__)
 app.config.suppress_callback_exceptions = True
 app.layout = layout.Main()
 
@@ -24,234 +25,269 @@ def deduplicate(func):
     @functools.wraps(func)
     def decorator(self, task):
         if os.getenv("DEDUPLICATION", "false") in ["true", "1"]:
-            dbtask = self.tasks_identities.get(task["identity"])
-            if dbtask and dbtask["instance"] != task["instance"]:
+            with self._db() as db:
+                instances = self._db_select_active_task_instances_by_identity(db, task["identity"])
+            if instances and task["instance"] not in instances:
                 return
-            self.tasks_identities[task["identity"]] = task
         func(self, task)
-        if os.getenv("DEDUPLICATION", "false") in ["true", "1"]:
-            dbtask = self.tasks_identities.get(task["identity"])
-            if dbtask and dbtask.get("ended"):
-                del self.tasks_identities[task["identity"]]
     return decorator
 
-
-def locked(func):
-    @functools.wraps(func)
-    def decorator(self, *args, **kwargs):
-        #with self.lock:
-        return func(self, *args, **kwargs)
-    return decorator
 
 
 class Dashboard(object):
     def __init__(self, app):
-        self.tasks = []
-        self.tasks_index = {}
-        self.tasks_identities = {} # identities in progress
-        self.workers = {}
-
-        self.metric_queued = 0
-        self.metric_running = 0
-        self.metric_failed = 0
-        self.metric_completed = 0
-
-        self.callbacks()
         self.timeout = 60
-        self.timer = Timer(self.timeout, self.prune_tasks)
-        self.timer.start()
-        self.lock = Lock()
+        self._queue_length_hour = [0] * 60
+        self._db_init()
+        self.timer_callback()
 
-        # Start push timer
-        self.push_requested = False
-        self.push_callback()
+    @contextlib.contextmanager
+    def _db(self):
+        db = sqlite3.connect("tasks.db", detect_types=sqlite3.PARSE_DECLTYPES)
+        try:
+            yield db
+        finally:
+            db.close()
 
-    def callbacks(self):
-        @app.callback(Output('tasklist', 'data'),
-              [Input('tabs-tasks', 'value')])
-        def render_content(tab):
-            return self.tasks_ended
+    def _db_init(self):
+        with self._db() as db:
+            cur = db.cursor()
+            cur.execute("DROP TABLE tasks")
+            cur.execute("CREATE TABLE IF NOT EXISTS tasks "
+                        "(instance text PRIMARY KEY, identity text, name text, hostname text, status text, queued timestamp, started timestamp, ended timestamp)")
+            db.commit()
 
+    def _db_tojson(self, tasks):
+        return [{
+            "identity": task[1],
+            "name": task[2],
+            "worker": task[3],
+            "status": task[4],
+            "queued": task[5],
+            "started": task[6],
+            "ended": task[7],
+        } for task in tasks]
 
-    def time(self):
-        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    def _db_select_workers(self, db):
+        cur = db.cursor()
+        cur.execute("SELECT t2.instance,t2.identity,t2.name as task,t1.hostname as name,t2.status,t2.queued,t2.started,t2.ended FROM (SELECT DISTINCT t1.hostname FROM tasks t1 WHERE hostname != '') AS t1 LEFT JOIN (SELECT * FROM tasks WHERE status = 'running') AS t2 ON t2.hostname = t1.hostname")
+        r = [dict((cur.description[i][0], value) \
+               for i, value in enumerate(row)) for row in cur.fetchall()]
+        return r
 
-    def find(self, task):
-        dbtask = self.tasks_index.get(task["instance"])
-        if not dbtask:
-            dbtask = task
-            self.tasks.insert(0, dbtask)
-            self.tasks_index[task["instance"]] = dbtask
+    def _db_select_task(self, db, instance):
+        cur = db.cursor()
+        return list(cur.execute("SELECT * FROM tasks WHERE instance = ?", (instance,)))
+
+    def _db_select_tasks_by_status(self, db, status):
+        cur = db.cursor()
+        return list(cur.execute("SELECT * FROM tasks WHERE status = ?", (status,)))
+
+    def _db_select_active_task_instances_by_identity(self, db, id):
+        cur = db.cursor()
+        return [n[0] for n in cur.execute("SELECT instance FROM tasks WHERE identity = ? AND status != 'failed' AND status != 'passed'", (id,)).fetchall()]
+
+    def _db_select_tasks_active(self, db):
+        cur = db.cursor()
+        return list(cur.execute("SELECT * FROM tasks WHERE status != 'failed' AND status != 'passed' ORDER BY queued DESC"))
+
+    def _db_select_tasks_running(self, db):
+        cur = db.cursor()
+        return list(cur.execute("SELECT * FROM tasks WHERE status = 'running'"))
+
+    def _db_select_tasks_finished(self, db):
+        cur = db.cursor()
+        return list(cur.execute("SELECT * FROM tasks WHERE status = 'failed' OR status = 'passed' ORDER BY ended DESC"))
+
+    def _db_insert_task(self, db, task):
+        cur = db.cursor()
+        cur.execute("INSERT INTO tasks VALUES (?,?,?,?,?,?,?,?)", (task["instance"], task["identity"], task["name"], "", "queued", self.time(), None, None,))
+        db.commit()
+
+    def _db_update_task_set_queued(self, db, task):
+        cur = db.cursor()
+        cur.execute("UPDATE tasks SET queued = ?, status = ? WHERE instance = ?", (self.time(), "queued", task["instance"]))
+        db.commit()
+
+    def _db_update_task_set_started(self, db, task):
+        cur = db.cursor()
+        # Invalidate tasks with the same hostname, if any
         if task["role"] == "worker":
-            dbtask["worker"] = task["hostname"]
-        return dbtask
+            cur.execute("UPDATE tasks SET ended = ?, status = 'passed' WHERE hostname = ? AND status = 'running'", (self.time(), task["hostname"]))
+        cur.execute("UPDATE tasks SET started = ?, status = ? WHERE instance = ?", (self.time(), "running", task["instance"]))
+        db.commit()
+        self._db_update_task_set_hostname(db, task)
+
+    def _db_update_task_set_hostname(self, db, task):
+        if task["role"] == "client":
+            return
+        cur = db.cursor()
+        cur.execute("UPDATE tasks SET hostname = ? WHERE instance = ?", (task["hostname"], task["instance"], ))
+        db.commit()
+
+    def _db_update_task_set_ended(self, db, task, status):
+        cur = db.cursor()
+        cur.execute("UPDATE tasks SET ended = ?, status = ? WHERE instance = ?", (self.time(), status, task["instance"]))
+        db.commit()
+
+    def _db_delete_old_tasks(self, age=86400):
+        with self._db() as db:
+            cur = db.cursor()
+            cur.execute("DELETE FROM tasks WHERE MAX(queued, started, ended) < ?", (self.time(age),))
+            db.commit()
+
+    def time(self, deltasecs=0):
+        return (datetime.now() - timedelta(seconds=deltasecs)).strftime("%Y-%m-%d %H:%M:%S")
+
+    def timer_callback(self):
+        self._db_delete_old_tasks()
+        self._queue_length_hour = self._queue_length_hour[1:] + [self.metric_queued]
+        self.timer = Timer(self.timeout, self.timer_callback)
+        self.timer.start()
+
+    @property
+    def metric_queued(self):
+        with self._db() as db:
+            cur = db.cursor()
+            return cur.execute("SELECT COUNT(*) FROM tasks WHERE status = 'queued'").fetchone()[0]
+
+    @property
+    def metric_running(self):
+        with self._db() as db:
+            cur = db.cursor()
+            return cur.execute("SELECT COUNT(*) FROM tasks WHERE status = 'running'").fetchone()[0]
+
+    @property
+    def metric_failed(self):
+        with self._db() as db:
+            cur = db.cursor()
+            return cur.execute("SELECT COUNT(*) FROM tasks WHERE status = 'failed'").fetchone()[0]
+
+    @property
+    def metric_completed(self):
+        with self._db() as db:
+            cur = db.cursor()
+            return cur.execute("SELECT COUNT(*) FROM tasks WHERE status IN ('passed', 'failed')").fetchone()[0]
 
     @property
     def metric_worker_count(self):
-        return len(self.workers)
+        with self._db() as db:
+            return len(self._db_select_workers(db))
 
     @property
     def metric_worker_load(self):
-        if not self.workers:
-            return 0
-        return sum(map(lambda w: 1 if w["task"] else 0, self.workers.values()))
+        with self._db() as db:
+            return len(self._db_select_tasks_by_status(db, "running"))
 
-    def undeduplicate(self, task):
-        if os.getenv("DEDUPLICATION", "false") in ["true", "1"]:
-            try:
-                del self.tasks_identities[task["identity"]]
-            except:
-                pass
-
-    def update_workers(self, task):
-        if "worker" not in task:
-            return
-        worker = {}
-        worker["name"] = task["worker"]
-        if task.get("started") and not task.get("ended"):
-            worker["task"] = task["name"]
-            worker["identity"] = task["identity"]
-            worker["started"] = task["started"]
-            worker["log"] = "[Log](/logs/{})".format(worker["name"])
-        else:
-            worker["task"] = ""
-            worker["identity"] = ""
-            worker["started"] = ""
-            worker["log"] = ""
-        dbworker = self.workers.get(task["worker"], {})
-        dbworker.update(worker)
-        self.workers[task["worker"]] = dbworker
-
-    @locked
     @deduplicate
     def post_queued(self, task):
-        task = self.find(task)
-        if task.get("queued"):
-            return
-        task["queued"] = self.time()
-        task["status"] = "queued"
-        self.metric_queued += 1
-        self.push()
+        with self._db() as db:
+            self._db_insert_task(db, task)
+            self._db_update_task_set_queued(db, task)
 
-    @locked
     @deduplicate
     def post_started(self, task):
-        task = self.find(task)
-        if task.get("started"):
-            return
-        task["started"] = self.time()
-        task["status"] = "running"
-        if task.get("queued"):
-            self.metric_queued -= 1
-        else:
-            task["queued"] = task["started"]
-        self.metric_running += 1
-        self.update_workers(task)
-        self.push()
+        with self._db() as db:
+            if not self._db_select_task(db, task["instance"]):
+                self._db_insert_task(db, task)
+                self._db_update_task_set_queued(db, task)
+            self._db_update_task_set_started(db, task)
 
-    @locked
     @deduplicate
     def post_finished(self, task):
-        task = self.find(task)
-        if task.get("ended"):
-            return
-        task["ended"] = self.time()
-        task["status"] = "passed"
-        if task.get("started"):
-            self.metric_running -= 1
-        elif task.get("queued"):
-            self.metric_queued -= 1
-            task["started"] = task["ended"]
-        else:
-            task["queued"] = task["ended"]
-            task["started"] = task["ended"]
-        self.metric_completed += 1
-        self.update_workers(task)
-        self.push()
+        with self._db() as db:
+            if not self._db_select_task(db, task["instance"]):
+                self._db_insert_task(db, task)
+                self._db_update_task_set_queued(db, task)
+                self._db_update_task_set_started(db, task)
+            self._db_update_task_set_ended(db, task, "passed")
 
-    @locked
     @deduplicate
     def post_failed(self, task):
-        task = self.find(task)
-        if task.get("ended"):
-            return
-        task["ended"] = self.time()
-        task["status"] = "failed"
-        if task.get("started"):
-            self.metric_running -= 1
-        elif task.get("queued"):
-            self.metric_queued -= 1
-            task["started"] = task["ended"]
-        else:
-            task["queued"] = task["ended"]
-            task["started"] = task["ended"]
-        self.metric_failed += 1
-        self.metric_completed += 1
-        self.update_workers(task)
-        self.push()
-
-    def push(self):
-        self.push_requested = True
-
-    @locked
-    def push_callback(self):
-        self.push_timer = Timer(2, self.push_callback)
-        self.push_timer.start()
-        if not self.push_requested:
-            return
-        app.push_mods({
-            'metric_cluster_load': {'value': self.metric_worker_load, 'max': self.metric_worker_count},
-            'metric_tasks_queued': {'children': self.metric_queued},
-            'metric_tasks_running': {'children': self.metric_running},
-            'metric_tasks_failed': {'children': self.metric_failed},
-            'metric_tasks_completed': {'children': self.metric_completed},
-            'tasklist_live': {'data': self.tasks_live},
-            'workerlist': {'data': sorted(self.workers.values(), key=lambda w: w["name"])}
-        })
-
-    def task_seen(self, task, seconds):
-        last_seen = task.get("queued") or task.get("started") or task.get("ended")
-        last_seen = datetime.strptime(last_seen, "%Y-%m-%d %H:%M:%S").timestamp()
-        return datetime.now().timestamp() - last_seen < seconds
+        with self._db() as db:
+            if not self._db_select_task(db, task["instance"]):
+                self._db_insert_task(db, task)
+                self._db_update_task_set_queued(db, task)
+                self._db_update_task_set_started(db, task)
+            self._db_update_task_set_ended(db, task, "failed")
 
     @property
     def tasks_live(self):
-        return list(filter(lambda t: not t.get("ended"), self.tasks))
+        with self._db() as db:
+            return self._db_tojson(self._db_select_tasks_active(db))
 
     @property
     def tasks_ended(self):
-        return list(filter(lambda t: t.get("ended"), self.tasks))
+        with self._db() as db:
+            return self._db_tojson(self._db_select_tasks_finished(db))
 
-    @locked
-    def prune_tasks(self):
-        alive = []
-        for task in self.tasks:
-            if not self.task_seen(task, 60*60): # 1h
-                del self.tasks_index[task["instance"]]
-                self.undeduplicate(task)
-                if task["status"] == "passed":
-                    self.metric_completed -= 1
-                elif task["status"] == "failed":
-                    self.metric_completed -= 1
-                    self.metric_failed -= 1
-                elif task["status"] == "running":
-                    self.metric_running -= 1
-                elif task["status"] == "queued":
-                    self.metric_queued -= 1
-            else:
-                alive.append(task)
-        self.tasks = alive
-        self.push()
-        self.timer = Timer(self.timeout, self.prune_tasks)
-        self.timer.start()
+    @property
+    def timeline_hour(self):
+        now = datetime.now()
+        return {(now - timedelta(hours=1) + timedelta(minutes=i)).strftime("%Y-%m-%d %H:%M"): 0 for i in range(0, 60)}
+
+    @property
+    def graph_queue(self):
+        fig = px.area([dict(time=time, count=count) for time, count in zip(self.timeline_hour, self._queue_length_hour)], x="time", y="count", title="Task Queue Length (1h)")
+        return fig
+
+    @property
+    def graph_completed(self):
+        with self._db() as db:
+            cur = db.cursor()
+            cur.execute("SELECT strftime('%Y-%m-%d %H:%M', ended) as time, COUNT(*) as count FROM tasks WHERE ended > ? AND status = 'passed' GROUP BY strftime('%Y-%m-%d %H:%M', ended)", (self.time(3600),))
+            passed = {row[0]: row[1] for row in cur.fetchall()}
+            cur.execute("SELECT strftime('%Y-%m-%d %H:%M', ended) as time, COUNT(*) as count FROM tasks WHERE ended > ? AND status = 'failed' GROUP BY strftime('%Y-%m-%d %H:%M', ended)", (self.time(3600),))
+            failed = {row[0]: row[1] for row in cur.fetchall()}
+
+        timeline = []
+        for time in self.timeline_hour:
+            timeline.append(dict(time=time, count=passed.get(time, 0), status="passed", color="#4CAF50"))
+            timeline.append(dict(time=time, count=failed.get(time, 0), status="failed", color="#f44336"))
+
+        fig = px.area(timeline, x="time", y="count", line_group="status", color="status", color_discrete_map={"passed": "green", "failed": "red"}, title="Tasks Completed (1h)")
+        return fig
+
+    @property
+    def workers(self):
+        with self._db() as db:
+            return self._db_select_workers(db)
 
 
 dashboard = Dashboard(app)
 
+@app.callback(Output('tasklist', 'data'),
+      [Input('tabs-tasks', 'value')])
+def render_content(tab):
+    return dashboard.tasks_ended
+
+@app.callback(
+    [
+        Output('graph_queue', 'figure'),
+        Output('graph_completed', 'figure'),
+        Output('metric_tasks_queued', 'children'),
+        Output('metric_tasks_running', 'children'),
+        Output('metric_tasks_failed', 'children'),
+        Output('metric_tasks_completed', 'children'),
+        Output('tasklist_live', 'data'),
+        Output('workerlist', 'data')
+    ],
+    [Input('interval', 'n_intervals')])
+def interval(n_intervals):
+    return \
+        dashboard.graph_queue, \
+        dashboard.graph_completed, \
+        dashboard.metric_queued, \
+        dashboard.metric_running, \
+        dashboard.metric_failed, \
+        dashboard.metric_completed, \
+        dashboard.tasks_live, \
+        sorted(dashboard.workers, key=lambda w: w["name"])
+
 
 @app.server.route('/api/v1/tasks', methods=['POST'])
-async def queued():
-    data = await request.get_json()
+def queued():
+    data = flask.request.get_json()
 
     if data["event"] == "queued":
         dashboard.post_queued(data)
