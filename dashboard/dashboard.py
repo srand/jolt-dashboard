@@ -18,6 +18,7 @@ import layout
 app = dash.Dash(__name__)
 app.config.suppress_callback_exceptions = True
 app.layout = layout.Main()
+app.title = "Jolt"
 
 
 
@@ -161,13 +162,13 @@ class Dashboard(object):
     def metric_failed(self):
         with self._db() as db:
             cur = db.cursor()
-            return cur.execute("SELECT COUNT(*) FROM tasks WHERE status = 'failed'").fetchone()[0]
+            return cur.execute("SELECT COUNT(*) FROM tasks WHERE status = 'failed' AND ended > ?", (self.time(3600),)).fetchone()[0]
 
     @property
     def metric_completed(self):
         with self._db() as db:
             cur = db.cursor()
-            return cur.execute("SELECT COUNT(*) FROM tasks WHERE status IN ('passed', 'failed')").fetchone()[0]
+            return cur.execute("SELECT COUNT(*) FROM tasks WHERE status IN ('passed', 'failed') AND ended > ?", (self.time(3600),)).fetchone()[0]
 
     @property
     def metric_worker_count(self):
@@ -256,10 +257,13 @@ class Dashboard(object):
 
 dashboard = Dashboard(app)
 
-@app.callback(Output('tasklist', 'data'),
-      [Input('tabs-tasks', 'value')])
-def render_content(tab):
+
+@app.callback(
+    Output('tasklist', 'data'),
+    [Input('tabs-tasks', 'value')])
+def tab_selected(tab):
     return dashboard.tasks_ended
+
 
 @app.callback(
     [
@@ -286,7 +290,7 @@ def interval(n_intervals):
 
 
 @app.server.route('/api/v1/tasks', methods=['POST'])
-def queued():
+def post_task():
     data = flask.request.get_json()
 
     if data["event"] == "queued":
