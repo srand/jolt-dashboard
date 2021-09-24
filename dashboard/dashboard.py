@@ -52,7 +52,7 @@ class Dashboard(object):
     def _db_init(self):
         with self._db() as db:
             cur = db.cursor()
-            cur.execute("DROP TABLE tasks")
+            cur.execute("DROP TABLE IF EXISTS tasks")
             cur.execute("CREATE TABLE IF NOT EXISTS tasks "
                         "(instance text PRIMARY KEY, identity text, name text, hostname text, status text, queued timestamp, started timestamp, ended timestamp)")
             db.commit()
