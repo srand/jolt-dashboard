@@ -1,6 +1,7 @@
 import dash
 from dash.dependencies import Input, Output
 import plotly.express as px
+import plotly.graph_objects as go
 
 from datetime import datetime, timedelta
 import functools
@@ -241,12 +242,24 @@ class Dashboard(object):
             cur.execute("SELECT strftime('%Y-%m-%d %H:%M', ended) as time, COUNT(*) as count FROM tasks WHERE ended > ? AND status = 'failed' GROUP BY strftime('%Y-%m-%d %H:%M', ended)", (self.time(3600),))
             failed = {row[0]: row[1] for row in cur.fetchall()}
 
-        timeline = []
+        pass_y = []
+        fail_y = []
+        time_x = []
         for time in self.timeline_hour:
-            timeline.append(dict(time=time, count=passed.get(time, 0), status="passed", color="#4CAF50"))
-            timeline.append(dict(time=time, count=failed.get(time, 0), status="failed", color="#f44336"))
+            time_x.append(time)
+            pass_y.append(passed.get(time, 0))
+            fail_y.append(failed.get(time, 0))
 
-        fig = px.area(timeline, x="time", y="count", line_group="status", color="status", color_discrete_map={"passed": "green", "failed": "red"}, title="Tasks Completed (1h)")
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(name="failed", x=time_x, y=fail_y, stackgroup='one', fillcolor='#f44336', mode= 'none'))
+        fig.add_trace(go.Scatter(name="passed", x=time_x, y=pass_y, stackgroup='one', fillcolor='#40C040', mode='lines'))
+        fig.update_traces(line_color="green", selector=dict(type='scatter'))
+        fig.update_layout(
+            title_text="Tasks Completed (1h)",
+            xaxis_title="time",
+            yaxis_title="count",
+        )
+
         return fig
 
     @property

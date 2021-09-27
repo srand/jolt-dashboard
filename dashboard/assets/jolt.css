@@ -20,7 +20,7 @@
 
 .jolt-tab--selected {
     border-top: 1px solid #d6d6d6 !important;
-    background-color: #c00000 !important;
+    background-color: #f44336 !important;
     font-weight: bold !important;
     color: white !important;
     padding: 16px !important;
@@ -45,7 +45,7 @@
 
 .jolt-tab-small--selected {
     border-top: 1px solid #d6d6d6 !important;
-    background-color: #c00000 !important;
+    background-color: #f44336 !important;
     font-weight: bold !important;
     color: white !important;
     padding: 8px !important;
