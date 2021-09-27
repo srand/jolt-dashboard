@@ -113,8 +113,9 @@ def Main():
             n_intervals=0
         ),
         html.Div([
-            html.Div(html.Img(src="/assets/jolt.png"),
-                     className="w3-container w3-cell w3-margin w3-padding w3-center jolt-box"),
+            html.Div(
+                html.H1("jolt", className="jolt-box"),
+                className="w3-container w3-cell w3-margin w3-padding w3-center jolt-box"),
             MetricCard("In Queue", "metric_tasks_queued"),
             MetricCard("In Progress", "metric_tasks_running"),
             MetricCard("Completed (1h)", "metric_tasks_completed"),
