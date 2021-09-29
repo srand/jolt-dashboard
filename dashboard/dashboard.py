@@ -91,7 +91,7 @@ class Dashboard(object):
 
     def _db_select_tasks_active(self, db):
         cur = db.cursor()
-        return list(cur.execute("SELECT * FROM tasks WHERE status != 'failed' AND status != 'passed' ORDER BY queued DESC"))
+        return list(cur.execute("SELECT * FROM tasks WHERE status != 'failed' AND status != 'passed' ORDER BY queued"))
 
     def _db_select_tasks_running(self, db):
         cur = db.cursor()
