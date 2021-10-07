@@ -93,13 +93,13 @@ class Dashboard(object):
         cur = db.cursor()
         return list(cur.execute("SELECT * FROM tasks WHERE status != 'failed' AND status != 'passed' ORDER BY queued"))
 
-    def _db_select_tasks_running(self, db):
+    def _db_select_tasks_running(self, db, order="started"):
         cur = db.cursor()
-        return list(cur.execute("SELECT * FROM tasks WHERE status = 'running'"))
+        return list(cur.execute("SELECT * FROM tasks WHERE status = 'running' ORDER BY ?", (order,)))
 
-    def _db_select_tasks_finished(self, db):
+    def _db_select_tasks_finished(self, db, since="1970-01-01T00:00:00", order="ended"):
         cur = db.cursor()
-        return list(cur.execute("SELECT * FROM tasks WHERE status = 'failed' OR status = 'passed' ORDER BY ended DESC"))
+        return list(cur.execute("SELECT * FROM tasks WHERE (status = 'failed' OR status = 'passed') AND ended > ? ORDER BY ? DESC", (since, order,)))
 
     def _db_insert_task(self, db, task):
         cur = db.cursor()
@@ -263,6 +263,19 @@ class Dashboard(object):
         return fig
 
     @property
+    def graph_worker(self):
+        with self._db() as db:
+            finished = self._db_tojson(self._db_select_tasks_finished(db, self.time(3600)))
+            running = self._db_tojson(self._db_select_tasks_running(db))
+
+        for task in running:
+            task["ended"] = self.time()
+
+        order = {"worker": sorted([worker["name"] for worker in self.workers])}
+
+        return px.timeline(finished+running, category_orders=order, x_start="started", x_end="ended", y="worker", color="worker", hover_name="name", range_x=(self.time(3600), self.time()))
+
+    @property
     def workers(self):
         with self._db() as db:
             return self._db_select_workers(db)
@@ -282,6 +295,7 @@ def tab_selected(tab):
     [
         Output('graph_queue', 'figure'),
         Output('graph_completed', 'figure'),
+        Output('graph_worker', 'figure'),
         Output('metric_tasks_queued', 'children'),
         Output('metric_tasks_running', 'children'),
         Output('metric_tasks_failed', 'children'),
@@ -294,6 +308,7 @@ def interval(n_intervals):
     return \
         dashboard.graph_queue, \
         dashboard.graph_completed, \
+        dashboard.graph_worker, \
         dashboard.metric_queued, \
         dashboard.metric_running, \
         dashboard.metric_failed, \

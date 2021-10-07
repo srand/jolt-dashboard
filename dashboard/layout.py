@@ -49,6 +49,8 @@ def WorkerList(id):
     ), className="w3-container w3-padding")
 
 
+def WorkerGantt(id):
+    return  html.Div(dcc.Graph(id="graph_worker", className="w3-container w3-cell jolt-half-width"), className="w3-container w3-padding")
 
 def WorkerLog(id):
     return  html.Div([
@@ -134,7 +136,10 @@ def Main():
                         ("Active", TaskList(id="tasklist_live", columns=["worker", "name", "identity", "queued", "started", "status"])),
                         ("Completed", TaskList(id="tasklist")),
                     ], id="tabs-tasks")),
-                    ("Workers", WorkerList(id="workerlist"))
+                    ("Workers", SmallTabs([
+                        ("Active", WorkerList(id="workerlist")),
+                        ("Utilization", WorkerGantt(id="workergantt")),
+                    ], id="tabs-workers"))
                 ]
             )
             , className="w3-cell-row w3-white"),
