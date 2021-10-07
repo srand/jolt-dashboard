@@ -135,7 +135,7 @@ class Dashboard(object):
     def _db_delete_old_tasks(self, age=86400):
         with self._db() as db:
             cur = db.cursor()
-            cur.execute("DELETE FROM tasks WHERE MAX(queued, started, ended) < ?", (self.time(age),))
+            cur.execute("DELETE FROM tasks WHERE MAX(IFNULL(queued, ''), IFNULL(started, ''), IFNULL(ended, '')) < ?", (self.time(age),))
             db.commit()
 
     def time(self, deltasecs=0):
