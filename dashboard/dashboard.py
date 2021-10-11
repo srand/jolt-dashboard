@@ -271,9 +271,11 @@ class Dashboard(object):
         for task in running:
             task["ended"] = self.time()
 
-        order = {"worker": sorted([worker["name"] for worker in self.workers])}
+        order = {"worker": sorted([worker["name"] for worker in self.workers], key=lambda item: (len(item), item))}
 
-        return px.timeline(finished+running, category_orders=order, x_start="started", x_end="ended", y="worker", color="worker", hover_name="name", range_x=(self.time(3600), self.time()))
+        fig = px.timeline(finished+running, category_orders=order, height=len(order["worker"])*40, x_start="started", x_end="ended", y="worker", color="worker", hover_name="name", range_x=(self.time(3600), self.time()))
+        fig.layout.update(showlegend=False)
+        return fig
 
     @property
     def workers(self):

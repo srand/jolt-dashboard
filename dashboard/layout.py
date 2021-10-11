@@ -50,7 +50,7 @@ def WorkerList(id):
 
 
 def WorkerGantt(id):
-    return  html.Div(dcc.Graph(id="graph_worker", className="w3-container w3-cell jolt-half-width"), className="w3-container w3-padding")
+    return  html.Div(dcc.Graph(id="graph_worker"))
 
 def WorkerLog(id):
     return  html.Div([
