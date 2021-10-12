@@ -273,7 +273,7 @@ class Dashboard(object):
 
         order = {"worker": sorted([worker["name"] for worker in self.workers], key=lambda item: (len(item), item))}
 
-        fig = px.timeline(finished+running, category_orders=order, height=len(order["worker"])*25, x_start="started", x_end="ended", y="worker", color="worker", hover_name="name", range_x=(self.time(3600), self.time()))
+        fig = px.timeline(finished+running, category_orders=order, height=len(order["worker"])*30, x_start="started", x_end="ended", y="worker", color="worker", hover_name="name", range_x=(self.time(3600), self.time()))
         fig.layout.update(showlegend=False)
         return fig
 

@@ -16,7 +16,7 @@ def sha1(data):
 def randitem(lst):
     return lst[random.randint(0, len(lst)-1)]
 
-workers = ["worker-" + str(i) for i in range(50)]
+workers = ["worker-" + str(i) for i in range(100)]
 taskname = ["onion", "cucumber", "orange", "banana", "apple", "squash", "gridlock", "majo"]
 
 try:
@@ -62,10 +62,10 @@ class Task:
 
 
 
-tasks = [None for _ in range(10)]
+tasks = [None for _ in range(100)]
 
 while True:
-    i = random.randint(0, 9)
+    i = random.randint(0, 99)
 
     task = tasks[i]
     if task:

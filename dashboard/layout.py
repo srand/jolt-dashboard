@@ -1,6 +1,6 @@
-import dash_table
-import dash_html_components as html
-import dash_core_components as dcc
+from dash import dash_table
+from dash import html
+from dash import dcc
 import dash_daq as daq
 
 
@@ -50,7 +50,7 @@ def WorkerList(id):
 
 
 def WorkerGantt(id):
-    return  html.Div(dcc.Graph(id="graph_worker"))
+    return  html.Div(dcc.Graph(id="graph_worker", style={"width": "100%", "height": "100%"}), className="w3-container w3-padding")
 
 def WorkerLog(id):
     return  html.Div([
