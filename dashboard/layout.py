@@ -138,7 +138,7 @@ def Main():
                     ], id="tabs-tasks")),
                     ("Workers", SmallTabs([
                         ("Active", WorkerList(id="workerlist")),
-                        ("Utilization", WorkerGantt(id="workergantt")),
+                        #("Utilization", WorkerGantt(id="workergantt")),
                     ], id="tabs-workers"))
                 ]
             )

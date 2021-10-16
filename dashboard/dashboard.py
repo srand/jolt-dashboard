@@ -297,7 +297,7 @@ def tab_selected(tab):
     [
         Output('graph_queue', 'figure'),
         Output('graph_completed', 'figure'),
-        Output('graph_worker', 'figure'),
+        #Output('graph_worker', 'figure'),
         Output('metric_tasks_queued', 'children'),
         Output('metric_tasks_running', 'children'),
         Output('metric_tasks_failed', 'children'),
@@ -307,16 +307,17 @@ def tab_selected(tab):
     ],
     [Input('interval', 'n_intervals')])
 def interval(n_intervals):
-    return \
-        dashboard.graph_queue, \
-        dashboard.graph_completed, \
-        dashboard.graph_worker, \
-        dashboard.metric_queued, \
-        dashboard.metric_running, \
-        dashboard.metric_failed, \
-        dashboard.metric_completed, \
-        dashboard.tasks_live, \
+    return [
+        dashboard.graph_queue,
+        dashboard.graph_completed,
+        #dashboard.graph_worker,
+        dashboard.metric_queued,
+        dashboard.metric_running,
+        dashboard.metric_failed,
+        dashboard.metric_completed,
+        dashboard.tasks_live,
         sorted(dashboard.workers, key=lambda w: w["name"])
+    ]
 
 
 @app.server.route('/api/v1/tasks', methods=['POST'])
