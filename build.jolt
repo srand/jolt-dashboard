@@ -1,0 +1,29 @@
+from jolt import Alias, BooleanParameter, Parameter, Task
+from jolt import attributes, influence
+from jolt.plugins import docker
+
+from os import getenv
+_version = getenv("DASHBOARD_VERSION")
+
+
+@influence.files("{dockerfile}")
+@influence.files("**/*.py")
+@attributes.requires("requires_push_{push}")
+class JoltDashboardImage(docker.DockerImage):
+    name = "dashboard/image"
+    dockerfile = "docker/Dockerfile"
+    push = BooleanParameter(False)
+    requires = ["docker/cli"]
+    requires_push_true = ["docker/login"]
+    tags = ["robrt/jolt-dashboard:latest", "robrt/jolt-dashboard:{version}"]
+    version = Parameter(_version)
+
+
+class Default(Alias):
+    @property
+    def push(self):
+        return "true" if _version else "false"
+
+    requires = [
+        "dashboard/image:push={push}",
+    ]
