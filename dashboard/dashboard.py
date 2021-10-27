@@ -45,7 +45,7 @@ class Dashboard(object):
 
     @contextlib.contextmanager
     def _db(self):
-        db = sqlite3.connect("tasks.db", detect_types=sqlite3.PARSE_DECLTYPES)
+        db = sqlite3.connect("tasks.db", timeout=120, detect_types=sqlite3.PARSE_DECLTYPES)
         try:
             yield db
         finally:
@@ -142,10 +142,12 @@ class Dashboard(object):
         return (datetime.now() - timedelta(seconds=deltasecs)).strftime("%Y-%m-%d %H:%M:%S")
 
     def timer_callback(self):
-        self._db_delete_old_tasks()
-        self._queue_length_hour = self._queue_length_hour[1:] + [self.metric_queued]
-        self.timer = Timer(self.timeout, self.timer_callback)
-        self.timer.start()
+        try:
+            self._db_delete_old_tasks()
+            self._queue_length_hour = self._queue_length_hour[1:] + [self.metric_queued]
+        finally:
+            self.timer = Timer(self.timeout, self.timer_callback)
+            self.timer.start()
 
     @property
     def metric_queued(self):
