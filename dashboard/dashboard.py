@@ -46,6 +46,7 @@ class Dashboard(object):
     @contextlib.contextmanager
     def _db(self):
         db = sqlite3.connect("tasks.db", timeout=120, detect_types=sqlite3.PARSE_DECLTYPES)
+        db.execute("PRAGMA journal_mode=OFF")
         try:
             yield db
         finally:
