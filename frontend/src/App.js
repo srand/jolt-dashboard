@@ -78,7 +78,11 @@ class App extends React.Component {
   }
 
   connectWebsocket() {
-    const client = new WebSocket('ws://' + window.location.host + '/api/v1/tasks/events');
+    if (window.location.protocol === "https:") {
+      var client = new WebSocket('wss://' + window.location.host + '/api/v1/tasks/events');
+    } else {
+      var client = new WebSocket('ws://' + window.location.host + '/api/v1/tasks/events');
+    }
     client.onmessage = (message) => {
       var task = JSON.parse(message.data);
       this.setState(function (prevState, props) {
@@ -106,7 +110,7 @@ class App extends React.Component {
   }
 
   fetchTasks() {
-    fetch("http://localhost:8080/api/v1/tasks", { mode: 'no-cors' })
+    fetch("/api/v1/tasks", { mode: 'no-cors' })
       .then((response) => response.json())
       .then((json) => {
         this.setState({ tasks: json });
