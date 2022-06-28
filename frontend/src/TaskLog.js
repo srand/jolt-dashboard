@@ -16,7 +16,7 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 
 function Log(props) {
     const log = props.value;
-    if (log == "") {
+    if (log === "") {
         return (
             <Box
                 display="flex"

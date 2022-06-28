@@ -37,7 +37,7 @@ class Tasks extends React.Component {
           renderCell: (params) => {
             return (
               <div>
-                <LogButton onClick={() => this.onLogClick(params.row)} disabled={params.row["Log"] == ""} />
+                <LogButton onClick={() => this.onLogClick(params.row)} disabled={params.row["Log"] === ""} />
                 <DeleteButton onClick={() => props.onDeleteClick(params.row)} />
               </div>
             );

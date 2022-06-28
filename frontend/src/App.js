@@ -13,7 +13,7 @@ import PropTypes from 'prop-types';
 import Paper from '@material-ui/core/Paper';
 
 
-import { ThemeProvider, createTheme, useTheme } from '@mui/material/styles';
+import { ThemeProvider, createTheme } from '@mui/material/styles';
 import red from '@material-ui/core/colors/red';
 import green from '@material-ui/core/colors/green';
 
@@ -33,13 +33,6 @@ const theme = createTheme({
   },
 });
 
-
-function a11yProps(index) {
-  return {
-    id: `nav-tab-${index}`,
-    'aria-controls': `nav-tabpanel-${index}`,
-  };
-}
 
 function TabPanel(props) {
   const { children, value, index, ...other } = props;
@@ -78,10 +71,11 @@ class App extends React.Component {
   }
 
   connectWebsocket() {
+    var client
     if (window.location.protocol === "https:") {
-      var client = new WebSocket('wss://' + window.location.host + '/api/v1/tasks/events');
+      client = new WebSocket('wss://' + window.location.host + '/api/v1/tasks/events');
     } else {
-      var client = new WebSocket('ws://' + window.location.host + '/api/v1/tasks/events');
+      client = new WebSocket('ws://' + window.location.host + '/api/v1/tasks/events');
     }
     client.onmessage = (message) => {
       var task = JSON.parse(message.data);
@@ -143,10 +137,10 @@ class App extends React.Component {
             <div className="w3-container w3-cell w3-margin w3-padding w3-center">
               <h1 className="jolt-box">jolt</h1>
             </div>
-            <Metric name="In Queue" value={this.state.tasks.filter((task) => { return task.Status == "Queued"; }).length} />
-            <Metric name="In Progress" value={this.state.tasks.filter((task) => { return task.Status == "Running"; }).length} />
-            <Metric name="Completed (1h)" value={this.state.tasks.filter((task) => { return task.Status == "Passed" || task.Status == "Failed"; }).length} />
-            <Metric name="Failed (1h)" value={this.state.tasks.filter((task) => { return task.Status == "Failed"; }).length} />
+            <Metric name="In Queue" value={this.state.tasks.filter((task) => { return task.Status === "Queued"; }).length} />
+            <Metric name="In Progress" value={this.state.tasks.filter((task) => { return task.Status === "Running"; }).length} />
+            <Metric name="Completed (1h)" value={this.state.tasks.filter((task) => { return task.Status === "Passed" || task.Status === "Failed"; }).length} />
+            <Metric name="Failed (1h)" value={this.state.tasks.filter((task) => { return task.Status === "Failed"; }).length} />
           </div>
           <Paper>
             <Tabs

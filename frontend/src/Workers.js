@@ -38,13 +38,13 @@ class Workers extends React.Component {
         for (var i = 0; i < tasks.length; i++) {
             let task = tasks[i]
 
-            if (task["Worker"] == "") {
+            if (task["Worker"] === "") {
                 continue;
             }
             if (!map.has(task["Worker"])) {
                 map.set(task["Worker"], { "id": task["Worker"], "Worker": task["Worker"], "Started": "" });
             }
-            if (task["Status"] == "Running" && map.get(task["Worker"])["Started"] < task["Started"]) {
+            if (task["Status"] === "Running" && map.get(task["Worker"])["Started"] < task["Started"]) {
                 map.set(task["Worker"], task);
             }
         }
