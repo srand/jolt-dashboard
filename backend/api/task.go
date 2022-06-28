@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -29,8 +28,6 @@ func (api *TaskApi) AddTask(c *gin.Context) {
 		c.String(http.StatusBadRequest, "bad request")
 		return
 	}
-
-	log.Println(event)
 
 	switch event.Event {
 	case "queued":
@@ -86,7 +83,6 @@ func (api *TaskApi) GetTaskEvents(c *gin.Context) {
 					return
 				}
 			case <-ctx.Done():
-				fmt.Println("Closing write")
 				return
 			}
 		}
