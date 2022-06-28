@@ -6,17 +6,57 @@ from os import getenv
 _version = getenv("DASHBOARD_VERSION")
 
 
+from jolt.plugins import git
+from jolt.plugins import golang
+from jolt.plugins import nodejs
+
+
+@git.influence("backend")
+class Backend(golang.Executable):
+    flags = ["-ldflags", "'-s -w'"]
+
+    def run(self, deps, tools):
+        with tools.cwd("backend"):
+            super().run(deps, tools)
+
+
+@git.influence("frontend")
+class Frontend(nodejs.RunBuildScript):
+    def run(self, deps, tools):
+        with tools.cwd("frontend"):
+            super().run(deps, tools)
+
+
+class Run(Task):
+    cacheable = False
+    requires = ["backend", "frontend"]
+
+    def run (self, deps, tools):
+        self.context = tools.builddir()
+        with tools.cwd(self.context):
+            deps["backend"].copy("*", ".")
+            deps["frontend"].copy("*", "static/")
+            tools.run("bin/backend")
+
+
 @influence.files("{dockerfile}")
 @influence.files("**/*.py")
 @attributes.requires("requires_push_{push}")
-class JoltDashboardImage(docker.DockerImage):
-    name = "dashboard/image"
+class Image(docker.DockerImage):
+    name = "image"
     dockerfile = "docker/Dockerfile"
     push = BooleanParameter(False)
-    requires = ["docker/cli"]
+    requires = ["docker/cli", "backend", "frontend"]
     requires_push_true = ["docker/login"]
     tags = ["robrt/jolt-dashboard:latest", "robrt/jolt-dashboard:{version}"]
     version = Parameter(_version)
+
+    def run(self, deps, tools):
+        self.context = tools.builddir()
+        with tools.cwd(self.context):
+            deps["backend"].copy("*", ".")
+            deps["frontend"].copy("*", "static/")
+        super().run(deps, tools)
 
 
 class Default(Alias):
@@ -25,5 +65,5 @@ class Default(Alias):
         return "true" if _version else "false"
 
     requires = [
-        "dashboard/image:push={push}",
+        "image:push={push}",
     ]

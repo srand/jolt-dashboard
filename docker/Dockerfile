@@ -1,7 +1,8 @@
-FROM python:3-slim
-ENV RELEASE=true
+FROM debian:bookworm-slim
+ENV GIN_MODE=release
+ENV PORT=80
 EXPOSE 80
-RUN pip3 install dash dash_daq requests_unixsocket aiohttp pandas
-ENTRYPOINT ["python", "/opt/jolt/dashboard/dashboard.py"]
+ENTRYPOINT ["/opt/jolt/bin/backend"]
+WORKDIR "/opt/jolt"
 CMD []
 COPY . /opt/jolt/
