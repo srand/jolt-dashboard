@@ -10,6 +10,14 @@ from jolt.plugins import git
 from jolt.plugins import golang
 from jolt.plugins import nodejs
 
+from jolt.pkgs import golang as go
+
+
+class Golang(go.Golang):
+    name = "golang"
+    def unpack(self, artifact, tools):
+        artifact.environ.GOROOT = str(artifact.paths.goroot)
+
 
 @git.influence("backend")
 class Backend(golang.Executable):
