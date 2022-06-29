@@ -19,6 +19,7 @@ func NewRouter(
 	v1.GET("tasks", apiTask.GetTasks)
 	// v1.GET("task/:id", apiTask.GetTask)
 	v1.DELETE("tasks/:id", apiTask.DeleteTask)
+	v1.GET("tasks/:id/log", apiTask.GetTaskLog)
 	v1.GET("tasks/events", apiTask.GetTaskEvents)
 
 	r.Use(static.Serve("/", static.LocalFile("static", true)))

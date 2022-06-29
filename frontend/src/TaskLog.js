@@ -59,7 +59,7 @@ class TaskLog extends React.Component {
             this.setState({ log: "" });
         }
         this.setState({ open: newProps.open, task: newProps.task });
-        fetch(newProps.task.Log, { mode: 'no-cors' })
+        fetch("/api/v1/tasks/" + newProps.task.id + "/log")
             .then((response) => response.text())
             .then((data) => {
                 this.setState({ log: data });

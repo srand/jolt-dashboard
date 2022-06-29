@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net/http"
 
@@ -119,4 +120,37 @@ func (api *TaskApi) DeleteTask(c *gin.Context) {
 	}
 
 	c.String(http.StatusOK, "")
+}
+
+func (api *TaskApi) GetTaskLog(c *gin.Context) {
+	uuid, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.String(http.StatusBadRequest, "bad request")
+		return
+	}
+
+	task, err := api.service.GetTask(uuid)
+	if err != nil || task.Log == "" {
+		c.String(http.StatusNotFound, "not found")
+		return
+	}
+
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+		},
+	}
+
+	client := &http.Client{Transport: transport}
+	response, err := client.Get(task.Log)
+	if err != nil {
+		c.String(http.StatusBadGateway, err.Error())
+		return
+	}
+
+	reader := response.Body
+	contentLength := response.ContentLength
+	contentType := response.Header.Get("Content-Type")
+
+	c.DataFromReader(http.StatusOK, contentLength, contentType, reader, nil)
 }

@@ -81,7 +81,7 @@ class App extends React.Component {
       var task = JSON.parse(message.data);
       this.setState(function (prevState, props) {
         let tasks = prevState.tasks.filter(function (task2) {
-          return task2.id !== task.id
+          return task2.id !== task.id;
         })
         if (task.Status !== "Deleted") {
           tasks.push(task);
@@ -104,7 +104,7 @@ class App extends React.Component {
   }
 
   fetchTasks() {
-    fetch("/api/v1/tasks", { mode: 'no-cors' })
+    fetch("/api/v1/tasks")
       .then((response) => response.json())
       .then((json) => {
         this.setState({ tasks: json });

@@ -41,6 +41,7 @@ class Task:
                 "instance": self.instance,
                 "name": self.name,
                 "role": "client" if event == "queued" else "worker",
+                "log": "https://ftp.sunet.se/mirror/archive/ftp.sunet.se/pub/simtelnet/CDROMS.TXT",
             })
             r.raise_for_status()
         except Exception as e:
