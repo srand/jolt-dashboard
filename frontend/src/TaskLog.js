@@ -100,7 +100,7 @@ class TaskLog extends React.Component {
                                 <ListItemText primary={this.state.task.Started} secondary="Started"></ListItemText>
                             </Grid>
                             <Grid item xs={4}>
-                                <ListItemText primary={this.state.task.Started} secondary="Finished"></ListItemText>
+                                <ListItemText primary={this.state.task.Ended} secondary="Finished"></ListItemText>
                             </Grid>
                             <Grid item xs={4}>
                                 <ListItemText primary={this.state.task.Status} secondary="Outcome"></ListItemText>
