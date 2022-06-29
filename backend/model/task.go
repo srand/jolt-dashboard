@@ -147,6 +147,9 @@ func (service *TaskService) TaskFinished(event *TaskEvent) (*Task, error) {
 	if task.Worker == "" {
 		task.Worker = event.Hostname
 	}
+	if task.Log == "" {
+		task.Log = event.Log
+	}
 	task.Ended = Now()
 	task.Status = "Passed"
 	return task, service.updateTask(task)
@@ -160,6 +163,9 @@ func (service *TaskService) TaskFailed(event *TaskEvent) (*Task, error) {
 	}
 	if task.Worker == "" {
 		task.Worker = event.Hostname
+	}
+	if task.Log == "" {
+		task.Log = event.Log
 	}
 	task.Ended = Now()
 	task.Status = "Failed"
