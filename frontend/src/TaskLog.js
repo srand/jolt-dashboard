@@ -29,7 +29,7 @@ function Log(props) {
             </Box>
         );
     }
-    
+
     let logLines = log.split("\n");
     logLines = logLines.filter((line) => {
         return props.filters.includes(line.slice(28, 35).trim());
@@ -56,17 +56,21 @@ class TaskLog extends React.Component {
 
     componentWillReceiveProps(newProps) {
         if (!this.state.open && newProps.open) {
-            this.setState({ log: "" });
-        }
-        this.setState({ open: newProps.open, task: newProps.task });
-        fetch("/api/v1/tasks/" + newProps.task.id + "/log")
-            .then((response) => response.text())
-            .then((data) => {
-                this.setState({ log: data });
-            })
-            .catch((reason) => {
-                console.log(reason);
+            this.setState(function(prevState, props) {
+                return { open: newProps.open, log: "", task: newProps.task };
             });
+
+            fetch("/api/v1/tasks/" + newProps.task.id + "/log")
+                .then((response) => response.text())
+                .then((data) => {
+                    this.setState(function(prevState, props) { return { log: data }; });
+                })
+                .catch((reason) => {
+                    console.log(reason);
+                });
+        } else {
+            this.setState({ open: newProps.open });
+        }
     }
 
     setFilters(filters) {
