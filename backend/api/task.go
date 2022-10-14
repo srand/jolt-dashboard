@@ -97,12 +97,6 @@ func (api *TaskApi) GetTaskEvents(c *gin.Context) {
 	}(ctx)
 
 	for {
-		err := ws.SetReadDeadline(time.Now().Add(30 * time.Second))
-		if err != nil {
-			fmt.Println(err)
-			break
-		}
-
 		_, _, err = ws.ReadMessage()
 		if err != nil {
 			fmt.Println(err)
