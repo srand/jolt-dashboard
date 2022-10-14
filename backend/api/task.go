@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -78,7 +79,13 @@ func (api *TaskApi) GetTaskEvents(c *gin.Context) {
 		for {
 			select {
 			case task := <-consumer.Chan:
-				err := ws.WriteJSON(task)
+				err := ws.SetWriteDeadline(time.Now().Add(30 * time.Second))
+				if err != nil {
+					ws.Close()
+					return
+				}
+
+				err = ws.WriteJSON(task)
 				if err != nil {
 					ws.Close()
 					return
@@ -90,7 +97,13 @@ func (api *TaskApi) GetTaskEvents(c *gin.Context) {
 	}(ctx)
 
 	for {
-		_, _, err := ws.ReadMessage()
+		err := ws.SetReadDeadline(time.Now().Add(30 * time.Second))
+		if err != nil {
+			fmt.Println(err)
+			break
+		}
+
+		_, _, err = ws.ReadMessage()
 		if err != nil {
 			fmt.Println(err)
 			break

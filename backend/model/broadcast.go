@@ -1,6 +1,7 @@
 package model
 
 import (
+	"log"
 	"sync"
 
 	"github.com/google/uuid"
@@ -35,7 +36,7 @@ func (b *Broadcast) NewClient() *client {
 
 	client := &client{}
 	client.Id = uuid.New()
-	client.Chan = make(chan interface{})
+	client.Chan = make(chan interface{}, 10)
 	client.broadcast = b
 
 	b.clients[client.Id] = client
@@ -47,6 +48,10 @@ func (b *Broadcast) Send(msg interface{}) {
 	b.lock.RLock()
 	defer b.lock.RUnlock()
 	for _, client := range b.clients {
-		client.Chan <- msg
+		select {
+		case client.Chan <- msg:
+		default:
+			log.Println("Client broadcast channel full, discarded event")
+		}
 	}
 }
