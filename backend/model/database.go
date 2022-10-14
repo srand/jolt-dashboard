@@ -12,7 +12,7 @@ type Database struct {
 }
 
 func NewDatabase() *Database {
-	db, err := gorm.Open(sqlite.Open("gorm.db"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		log.Fatal(err)
 	}
