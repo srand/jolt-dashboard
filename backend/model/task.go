@@ -64,11 +64,11 @@ func (service *TaskService) garbageCollect() {
 	timer := time.NewTicker(time.Minute)
 	for {
 		<-timer.C
-		expired := time.Now().Add(-time.Hour)
-		expiredStr := expired.Format("2006-01-02 15:04:05.999")
+		queuedCutoff := time.Now().Add(-(time.Hour * 48)).Format("2006-01-02 15:04:05.999")
+		endedCutOff := time.Now().Add(-time.Hour).Format("2006-01-02 15:04:05.999")
 
 		var tasks []Task
-		service.Db.db.Where("queued < ?", expiredStr).Find(&tasks)
+		service.Db.db.Where("(queued < ?) or (ended != '' and ended < ?) ", queuedCutoff, endedCutOff).Find(&tasks)
 
 		for _, lost := range tasks {
 			service.DeleteTask(&lost)
