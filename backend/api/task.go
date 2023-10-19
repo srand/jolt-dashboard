@@ -50,6 +50,16 @@ func (api *TaskApi) AddTask(c *gin.Context) {
 	c.JSON(http.StatusOK, task)
 }
 
+func (api *TaskApi) GetStatistics(c *gin.Context) {
+	stats, err := api.service.GetStatistics()
+	if err != nil {
+		c.String(http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	c.JSON(http.StatusOK, stats)
+}
+
 func (api *TaskApi) GetTasks(c *gin.Context) {
 	tasks, err := api.service.GetTasks()
 	if err != nil {

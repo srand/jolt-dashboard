@@ -16,6 +16,7 @@ func NewRouter(
 
 	v1 := r.Group("/api/v1/")
 	v1.POST("tasks", apiTask.AddTask)
+	v1.GET("statistics", apiTask.GetStatistics)
 	v1.GET("tasks", apiTask.GetTasks)
 	// v1.GET("task/:id", apiTask.GetTask)
 	v1.DELETE("tasks/:id", apiTask.DeleteTask)

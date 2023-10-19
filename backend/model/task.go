@@ -100,6 +100,96 @@ func (service *TaskService) updateTask(task *Task) error {
 	return result.Error
 }
 
+func (service *TaskService) GetStatistics() (*Statistics, error) {
+	var tasks []Task
+	result := service.Db.db.Find(&tasks)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	stats := &Statistics{
+		RoutingKeys: map[string]*Metrics{},
+		Workers:     map[string]*BaseMetrics{},
+		Tasks:       NewMetrics(),
+	}
+
+	for _, task := range tasks {
+		if _, ok := stats.RoutingKeys[task.RoutingKey]; task.RoutingKey != "" && !ok {
+			stats.RoutingKeys[task.RoutingKey] = NewMetrics()
+		}
+		if _, ok := stats.Workers[task.Worker]; task.Worker != "" && !ok {
+			stats.Workers[task.Worker] = NewBaseMetrics()
+		}
+
+		switch task.Status {
+		case "Queued":
+			stats.Tasks.Queued++
+			stats.Tasks.WaitTime.AddTask(&task)
+			if task.RoutingKey != "" {
+				m := stats.RoutingKeys[task.RoutingKey]
+				m.Queued++
+				m.WaitTime.AddTask(&task)
+				stats.RoutingKeys[task.RoutingKey] = m
+			}
+		case "Running":
+			stats.Tasks.Running++
+			stats.Tasks.WaitTime.AddTask(&task)
+			if task.RoutingKey != "" {
+				m := stats.RoutingKeys[task.RoutingKey]
+				m.Running++
+				m.WaitTime.AddTask(&task)
+				stats.RoutingKeys[task.RoutingKey] = m
+			}
+			if task.Worker != "" {
+				m := stats.Workers[task.Worker]
+				m.Running++
+				m.WaitTime.AddTask(&task)
+				stats.Workers[task.Worker] = m
+			}
+		case "Passed":
+			stats.Tasks.Passed++
+			stats.Tasks.WaitTime.AddTask(&task)
+			if task.RoutingKey != "" {
+				m := stats.RoutingKeys[task.RoutingKey]
+				m.Passed++
+				m.WaitTime.AddTask(&task)
+				stats.RoutingKeys[task.RoutingKey] = m
+			}
+			if task.Worker != "" {
+				m := stats.Workers[task.Worker]
+				m.Passed++
+				m.WaitTime.AddTask(&task)
+				stats.Workers[task.Worker] = m
+			}
+		case "Failed":
+			stats.Tasks.Failed++
+			stats.Tasks.WaitTime.AddTask(&task)
+			if task.RoutingKey != "" {
+				m := stats.RoutingKeys[task.RoutingKey]
+				m.Failed++
+				m.WaitTime.AddTask(&task)
+				stats.RoutingKeys[task.RoutingKey] = m
+			}
+			if task.Worker != "" {
+				m := stats.Workers[task.Worker]
+				m.Failed++
+				m.WaitTime.AddTask(&task)
+				stats.Workers[task.Worker] = m
+			}
+		}
+	}
+
+	stats.Tasks.WaitTime.Update()
+	for routingKey := range stats.RoutingKeys {
+		stats.RoutingKeys[routingKey].WaitTime.Update()
+	}
+	for worker := range stats.Workers {
+		stats.Workers[worker].WaitTime.Update()
+	}
+
+	return stats, nil
+}
+
 func (service *TaskService) GetTask(instance uuid.UUID) (*Task, error) {
 	var dbtask Task
 	result := service.Db.db.Where("instance = ?", instance).Take(&dbtask)
