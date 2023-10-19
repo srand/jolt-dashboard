@@ -8,15 +8,16 @@ import (
 )
 
 type Task struct {
-	Instance uuid.UUID `json:"id" gorm:"primaryKey"`
-	Name     string
-	Identity string
-	Worker   string
-	Status   string
-	Queued   string
-	Started  string
-	Ended    string
-	Log      string
+	Instance   uuid.UUID `json:"id" gorm:"primaryKey"`
+	Name       string
+	Identity   string
+	RoutingKey string
+	Worker     string
+	Status     string
+	Queued     string
+	Started    string
+	Ended      string
+	Log        string
 }
 
 func Now() string {
@@ -27,6 +28,7 @@ func NewTaskFromEvent(event *TaskEvent) *Task {
 	task := Task{}
 	task.Identity = event.Identity
 	task.Instance = event.Instance
+	task.RoutingKey = event.RoutingKey
 	task.Name = event.Name
 	task.Queued = Now()
 	task.Status = "Queued"
@@ -36,13 +38,14 @@ func NewTaskFromEvent(event *TaskEvent) *Task {
 }
 
 type TaskEvent struct {
-	Event    string
-	Hostname string
-	Identity string
-	Instance uuid.UUID
-	Name     string
-	Role     string
-	Log      string
+	Event      string
+	Hostname   string
+	RoutingKey string `json:"routing_key,omitempty"`
+	Identity   string
+	Instance   uuid.UUID
+	Name       string
+	Role       string
+	Log        string
 }
 
 type TaskService struct {

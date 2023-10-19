@@ -16,6 +16,7 @@ def sha1(data):
 def randitem(lst):
     return lst[random.randint(0, len(lst)-1)]
 
+routing_keys = ["default", "test"]
 workers = ["worker-" + str(i) for i in range(10)]
 taskname = ["onion", "cucumber", "orange", "banana", "apple", "squash", "gridlock", "majo"]
 
@@ -26,11 +27,12 @@ except:
 
 class Task:
     def __init__(self):
-        self.name = randitem(taskname)
         self.identity = sha1(str(uuid.uuid4()))
         self.instance = str(uuid.uuid4())
-        self.worker = randitem(workers)
+        self.name = randitem(taskname)
+        self.routing_key = randitem(routing_keys)
         self.started = False
+        self.worker = randitem(workers)
 
     def post(self, event):
         try:
@@ -41,6 +43,7 @@ class Task:
                 "instance": self.instance,
                 "name": self.name,
                 "role": "client" if event == "queued" else "worker",
+                "routing_key": self.routing_key,
                 "log": "https://ftp.sunet.se/mirror/archive/ftp.sunet.se/pub/simtelnet/CDROMS.TXT",
             })
             r.raise_for_status()

@@ -14,12 +14,9 @@ class Tasks extends React.Component {
   constructor(props) {
     super(props);
     let value = props.value;
-    //value = [
-    //  { "id": 1, "Log": "" },
-    //  { "id": 2, "Log": "http://www.dn.se", "Name": "task/name:param=value", "Started": "2021", "Ended": "2022", "Status": "Failed", "Worker": "worker-09", "Identity": "da39a3ee5e6b4b0d3255bfef95601890afd80709" },
-    //]
     this.state = {
       columns: [
+        { field: 'RoutingKey', headerName: 'Routing Key', flex: 1 },
         { field: 'Worker', headerName: 'Worker', flex: 1 },
         { field: 'Name', headerName: 'Name', flex: 1 },
         { field: 'Identity', headerName: 'Identity', flex: 1 },
