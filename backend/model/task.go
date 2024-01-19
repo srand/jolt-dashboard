@@ -225,6 +225,9 @@ func (service *TaskService) TaskStarted(event *TaskEvent) (*Task, error) {
 	if err != nil {
 		task = NewTaskFromEvent(event)
 	}
+	if task.Log == "" {
+		task.Log = event.Log
+	}
 	task.Started = Now()
 	task.Status = "Running"
 	task.Worker = event.Hostname
