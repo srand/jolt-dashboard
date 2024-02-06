@@ -1,6 +1,7 @@
 import React from 'react';
 import { DataGrid } from '@mui/x-data-grid';
 import LogButton from './LogButton';
+import TaskLog from "./TaskLog"
 
 
 class Workers extends React.Component {
@@ -22,12 +23,14 @@ class Workers extends React.Component {
                     renderCell: (params) => {
                         return (
                             <div>
-                                <LogButton index={params.row.id} disabled />
+                                <LogButton onClick={() => this.onLogClick(params.row)} disabled={params.row["Log"] === ""} />
                             </div>
                         );
                     }
                 },
             ],
+            logOpen: false,
+            logTask: { "Log": "", "Name": "" },
             rows: this.workersFromTasks(props.value),
         };
     }
@@ -42,7 +45,7 @@ class Workers extends React.Component {
                 continue;
             }
             if (!map.has(task["Worker"])) {
-                map.set(task["Worker"], { "id": task["Worker"], "Worker": task["Worker"], "Started": "" });
+                map.set(task["Worker"], { "id": task["Worker"], "Worker": task["Worker"], "Started": "", "Log": "" });
             }
             if (task["Status"] === "Running" && map.get(task["Worker"])["Started"] < task["Started"]) {
                 map.set(task["Worker"], task);
@@ -56,9 +59,23 @@ class Workers extends React.Component {
         this.setState({ rows: this.workersFromTasks(newProps.value) })
     }
 
+    onLogClick(task) {
+        this.setState({ logOpen: true, logTask: task });
+    }
+
+    onLogClose() {
+        this.setState({ logOpen: false });
+    }
+
     render() {
         return (
             <div className="w3-container w3-cell-row w3-margin-top">
+                <TaskLog
+                    open={this.state.logOpen}
+                    onClose={() => { this.onLogClose(); }}
+                    task={this.state.logTask}
+                />
+
                 <DataGrid
                     autoHeight
                     so
