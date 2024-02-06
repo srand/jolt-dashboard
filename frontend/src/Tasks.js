@@ -16,7 +16,7 @@ class Tasks extends React.Component {
     let value = props.value;
     this.state = {
       columns: [
-        { field: 'RoutingKey', headerName: 'Routing Key', flex: 1 },
+        { field: 'RoutingKey', headerName: 'Labels', flex: 1 },
         { field: 'Worker', headerName: 'Worker', flex: 1 },
         { field: 'Name', headerName: 'Name', flex: 1 },
         { field: 'Identity', headerName: 'Identity', flex: 1 },
