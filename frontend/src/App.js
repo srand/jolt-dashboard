@@ -66,18 +66,23 @@ class App extends React.Component {
     super(props);
     this.state = {
       menuItem: 0,
+      updating: true,
       tasks: [],
     };
   }
 
   connectWebsocket() {
-    var client
     if (window.location.protocol === "https:") {
-      client = new WebSocket('wss://' + window.location.host + '/api/v1/tasks/events');
+      this.client = new WebSocket('wss://' + window.location.host + '/api/v1/tasks/events');
     } else {
-      client = new WebSocket('ws://' + window.location.host + '/api/v1/tasks/events');
+      this.client = new WebSocket('ws://' + window.location.host + '/api/v1/tasks/events');
     }
-    client.onmessage = (message) => {
+    this.client.onmessage = (message) => {
+      if (!this.state.updating) {
+        this.client.close();
+        return
+      }
+
       var task = JSON.parse(message.data);
       this.setState(function (prevState, props) {
         let tasks = prevState.tasks.filter(function (task2) {
@@ -89,8 +94,10 @@ class App extends React.Component {
         return { tasks: tasks };
       });
     };
-    client.onclose = () => {
-      setTimeout(this.fetchAndConnect.bind(this), 10000);
+    this.client.onclose = () => {
+      if (this.state.updating) {
+        setTimeout(this.fetchAndConnect.bind(this), 10000);
+      }
     };
   }
 
@@ -129,6 +136,15 @@ class App extends React.Component {
       });
   }
 
+  onPause() {
+    this.setState({ updating: false });
+  }
+
+  onPlay() {
+    this.setState({ updating: true });
+    this.fetchAndConnect();
+  }
+
   render() {
     return (
       <div>
@@ -158,6 +174,9 @@ class App extends React.Component {
             <Tasks
               value={this.state.tasks}
               onDeleteClick={(task) => this.handleTaskDeleted(task)}
+              onPause={() => this.onPause()}
+              onPlay={() => this.onPlay()}
+              updating={this.state.updating}
             />
           </TabPanel>
           <TabPanel value={this.state.menuItem} index={1}>

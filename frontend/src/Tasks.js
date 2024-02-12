@@ -7,6 +7,7 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 
 import DeleteButton from './DeleteButton';
 import LogButton from './LogButton';
+import PauseButton from './PauseButton';
 import TaskLog from "./TaskLog"
 
 
@@ -78,6 +79,9 @@ class Tasks extends React.Component {
 
         <Box display="flex" alignItems="center">
           <Box flexGrow={1}></Box>
+          <Box className="w3-margin-right">
+            <PauseButton color="primary" selected={this.props.updating} onPause={() => { this.props.onPause(); }} onPlay={() => { this.props.onPlay(); }} />
+          </Box>
           <Box>
             <ToggleButtonGroup value={this.state.filters} onChange={(ev, val) => { this.setFilters(val); }}>
               <ToggleButton color="primary" value="Queued" >Queued</ToggleButton>
