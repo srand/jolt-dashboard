@@ -9,10 +9,10 @@ class Workers extends React.Component {
         super(props);
         this.state = {
             columns: [
-                { field: 'Worker', headerName: 'Worker', flex: 1 },
-                { field: 'Name', headerName: 'Task', flex: 1 },
-                { field: 'Identity', headerName: 'Identity', flex: 1 },
-                { field: 'Started', headerName: 'Started', flex: 1 },
+                { field: 'Worker', headerName: 'Worker', flex: 2 },
+                { field: 'Name', headerName: 'Task', flex: 4 },
+                { field: 'Identity', headerName: 'Identity', flex: 2 },
+                { field: 'Started', headerName: 'Started', flex: 2 },
                 {
                     field: "actions",
                     headerName: "Actions",

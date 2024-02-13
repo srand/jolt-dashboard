@@ -18,12 +18,12 @@ class Tasks extends React.Component {
     this.state = {
       columns: [
         { field: 'RoutingKey', headerName: 'Labels', flex: 1 },
-        { field: 'Worker', headerName: 'Worker', flex: 1 },
-        { field: 'Name', headerName: 'Name', flex: 1 },
-        { field: 'Identity', headerName: 'Identity', flex: 1 },
-        { field: 'Queued', headerName: 'Queued', flex: 1 },
-        { field: 'Started', headerName: 'Started', flex: 1 },
-        { field: 'Ended', headerName: 'Finished', flex: 1 },
+        { field: 'Worker', headerName: 'Worker', flex: 2 },
+        { field: 'Name', headerName: 'Name', flex: 4, resizeable: true},
+        { field: 'Identity', headerName: 'Identity', flex: 2 },
+        { field: 'Queued', headerName: 'Queued', flex: 2 },
+        { field: 'Started', headerName: 'Started', flex: 2 },
+        { field: 'Ended', headerName: 'Finished', flex: 2 },
         { field: 'Status', headerName: 'Status', flex: 1 },
         {
           field: "actions",
