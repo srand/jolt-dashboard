@@ -79,10 +79,6 @@ func (service *TaskService) garbageCollect() {
 	}
 }
 
-func (service *TaskService) addTask(task *Task) error {
-	return service.Db.Create(task)
-}
-
 func (service *TaskService) updateTask(task *Task) error {
 	// Force-end tasks already running on same worker
 	if task.Status == "Running" {
@@ -176,6 +172,8 @@ func (service *TaskService) GetStatistics() (*Statistics, error) {
 				m.WaitTime.AddTask(&task)
 				stats.Workers[task.Worker] = m
 			}
+		case "Cancelled":
+			stats.Tasks.Cancelled++
 		}
 	}
 
@@ -265,5 +263,19 @@ func (service *TaskService) TaskFailed(event *TaskEvent) (*Task, error) {
 	}
 	task.Ended = Now()
 	task.Status = "Failed"
+	return task, service.updateTask(task)
+}
+
+func (service *TaskService) TaskCancelled(event *TaskEvent) (*Task, error) {
+	task, err := service.GetTask(event.Instance)
+	if err != nil {
+		task = NewTaskFromEvent(event)
+	}
+	if task.Worker == "" {
+		task.Worker = event.Hostname
+	}
+	task.Log = ""
+	task.Ended = Now()
+	task.Status = "Cancelled"
 	return task, service.updateTask(task)
 }

@@ -63,6 +63,9 @@ class Task:
     def post_failed(self):
         self.post("failed")
 
+    def post_cancelled(self):
+        self.post("cancelled")
+
 
 
 
@@ -74,7 +77,11 @@ while True:
     task = tasks[i]
     if task:
         if not task.started:
-            task.post_started()
+            if random.randint(0,2) > 0:
+                task.post_started()
+            else:
+                task.post_cancelled()
+                tasks[i] = None
         else:
             [task.post_finished, task.post_failed][random.randint(0,1)]()
             tasks[i] = None

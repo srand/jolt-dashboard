@@ -21,7 +21,8 @@ func NewBaseMetrics() *BaseMetrics {
 
 type Metrics struct {
 	BaseMetrics
-	Queued int
+	Queued    int
+	Cancelled int
 }
 
 func NewMetrics() *Metrics {

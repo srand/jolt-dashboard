@@ -44,7 +44,7 @@ class Tasks extends React.Component {
       ],
       rows: value,
       filteredRows: value,
-      filters: ["Queued", "Running", "Passed", "Failed"],
+      filters: ["Queued", "Running", "Passed", "Failed", "Cancelled"],
       logOpen: false,
       logTask: { "Log": "", "Name": "" },
     };
@@ -88,6 +88,7 @@ class Tasks extends React.Component {
               <ToggleButton color="primary" value="Running" >Running</ToggleButton>
               <ToggleButton color="primary" value="Passed" >Passed</ToggleButton>
               <ToggleButton color="primary" value="Failed" >Failed</ToggleButton>
+              <ToggleButton color="primary" value="Cancelled" >Cancelled</ToggleButton>
             </ToggleButtonGroup>
           </Box>
         </Box>

@@ -40,6 +40,8 @@ func (api *TaskApi) AddTask(c *gin.Context) {
 		task, err = api.service.TaskFinished(&event)
 	case "failed":
 		task, err = api.service.TaskFailed(&event)
+	case "cancelled":
+		task, err = api.service.TaskCancelled(&event)
 	}
 
 	if err != nil {
