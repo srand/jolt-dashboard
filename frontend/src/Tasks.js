@@ -24,6 +24,39 @@ class Tasks extends React.Component {
         { field: 'Queued', headerName: 'Queued', flex: 2 },
         { field: 'Started', headerName: 'Started', flex: 2 },
         { field: 'Ended', headerName: 'Finished', flex: 2 },
+        { field: 'Duration',
+          headerName: 'Duration',
+          flex: 1,
+          align: 'center',
+          valueGetter: (params) => {
+            // Calculate duration from Started and Ended timestamps
+            if (params.row["Started"] === "" || params.row["Ended"] === "") {
+              return null;
+            }
+            var started = new Date(params.row["Started"]);
+            var ended = new Date(params.row["Ended"]);
+            var duration = ended - started;
+            var seconds = duration / 1000;
+            return seconds;
+          },
+          renderCell: (params) => {
+            if (params.value === null) {
+              return "";
+            }
+            // Convert seconds to human readable format
+            var hours = Math.floor(params.value / 3600);
+            var minutes = Math.floor((params.value % 3600) / 60);
+            var seconds = params.value % 60;
+
+            if (hours === 0 && minutes === 0) {
+              return seconds + "s";
+            }
+            if (hours === 0) {
+              return minutes + "m " + seconds + "s";
+            }
+            return hours + "h " + minutes + "m " + seconds + "s";
+          },
+        },
         { field: 'Status', headerName: 'Status', flex: 1 },
         {
           field: "actions",
