@@ -43,10 +43,14 @@ class Tasks extends React.Component {
             if (params.value === null) {
               return "";
             }
+
             // Convert seconds to human readable format
             var hours = Math.floor(params.value / 3600);
             var minutes = Math.floor((params.value % 3600) / 60);
             var seconds = params.value % 60;
+
+            // Round to one decimal place
+            seconds = Math.round(seconds * 10) / 10;
 
             if (hours === 0 && minutes === 0) {
               return seconds + "s";
