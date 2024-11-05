@@ -68,6 +68,9 @@ class App extends React.Component {
       menuItem: 0,
       updating: true,
       tasks: [],
+      queueTimeAvg: 0,
+      queueTimeMed: 0,
+      queueTimeEst: 0,
     };
   }
 
@@ -93,6 +96,7 @@ class App extends React.Component {
         }
         return { tasks: tasks };
       });
+      this.getQueueTimes();
     };
     this.client.onclose = () => {
       if (this.state.updating) {
@@ -115,6 +119,7 @@ class App extends React.Component {
       .then((response) => response.json())
       .then((json) => {
         this.setState({ tasks: json });
+        this.getQueueTimes();
       })
       .catch((reason) => {
         console.log(reason);
@@ -145,6 +150,64 @@ class App extends React.Component {
     this.fetchAndConnect();
   }
 
+  formatTime(duration) {
+    // Convert seconds to human readable format
+    var hours = Math.floor(duration / 3600);
+    var minutes = Math.floor((duration % 3600) / 60);
+    var seconds = duration % 60;
+
+    // Round to integer
+    seconds = Math.round(seconds);
+
+    if (hours === 0 && minutes === 0) {
+      return seconds + "s";
+    }
+    if (hours === 0) {
+      return minutes + "m " + seconds + "s";
+    }
+    return hours + "h " + minutes + "m " + seconds + "s";
+  }
+
+  getQueueTimes() {
+    var tasks = this.state.tasks.filter((task) => { return task.Started !== ""; });
+
+    if (tasks.length === 0) {
+      this.setState({
+        queueTimeAvg: this.formatTime(0),
+        queueTimeMed: this.formatTime(0),
+        queueTimeEst: this.formatTime(0),
+      });
+      return;
+    }
+
+    tasks = tasks.map((task) => {
+      var queued = new Date(task["Queued"]);
+      var started = new Date(task["Started"]);
+      var qtime = started - queued;
+      var seconds = qtime / 1000;
+      return seconds;
+    })
+
+    tasks = tasks.sort();
+
+    // Calculate average
+    var sum = tasks.reduce((a, b) => a + b, 0);
+    var avg = sum / tasks.length;
+
+    // Calculate median
+    var mid = Math.floor(tasks.length / 2);
+    var median = tasks.length % 2 !== 0 ? tasks[mid] : (tasks[mid - 1] + tasks[mid]) / 2;
+
+    // Calculate estimated time as average time * number of queued tasks
+    var est = avg * this.state.tasks.filter((task) => { return task["Status"] === "Queued" }).length;
+
+    this.setState({
+      queueTimeAvg: this.formatTime(avg),
+      queueTimeMed: this.formatTime(median),
+      queueTimeEst: this.formatTime(est),
+    });
+  }
+
   render() {
     return (
       <div>
@@ -157,6 +220,9 @@ class App extends React.Component {
             <Metric name="In Progress" value={this.state.tasks.filter((task) => { return task.Status === "Running"; }).length} />
             <Metric name="Completed (1h)" value={this.state.tasks.filter((task) => { return task.Status === "Passed" || task.Status === "Failed"; }).length} />
             <Metric name="Failed (1h)" value={this.state.tasks.filter((task) => { return task.Status === "Failed"; }).length} />
+            <Metric name="Queue Time (1h avg)" value={this.state.queueTimeAvg} />
+            <Metric name="Queue Time (1h med)" value={this.state.queueTimeMed} />
+            <Metric name="Queue Time (est)" value={this.state.queueTimeEst} />
           </div>
           <Paper>
             <Tabs
