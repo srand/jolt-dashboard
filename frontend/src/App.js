@@ -70,7 +70,6 @@ class App extends React.Component {
       tasks: [],
       queueTimeAvg: 0,
       queueTimeMed: 0,
-      queueTimeEst: 0,
     };
   }
 
@@ -175,7 +174,6 @@ class App extends React.Component {
       this.setState({
         queueTimeAvg: this.formatTime(0),
         queueTimeMed: this.formatTime(0),
-        queueTimeEst: this.formatTime(0),
       });
       return;
     }
@@ -198,13 +196,9 @@ class App extends React.Component {
     var mid = Math.floor(tasks.length / 2);
     var median = tasks.length % 2 !== 0 ? tasks[mid] : (tasks[mid - 1] + tasks[mid]) / 2;
 
-    // Calculate estimated time as average time * number of queued tasks
-    var est = avg * this.state.tasks.filter((task) => { return task["Status"] === "Queued" }).length;
-
     this.setState({
       queueTimeAvg: this.formatTime(avg),
       queueTimeMed: this.formatTime(median),
-      queueTimeEst: this.formatTime(est),
     });
   }
 
@@ -222,7 +216,6 @@ class App extends React.Component {
             <Metric name="Failed (1h)" value={this.state.tasks.filter((task) => { return task.Status === "Failed"; }).length} />
             <Metric name="Queue Time (1h avg)" value={this.state.queueTimeAvg} />
             <Metric name="Queue Time (1h med)" value={this.state.queueTimeMed} />
-            <Metric name="Queue Time (est)" value={this.state.queueTimeEst} />
           </div>
           <Paper>
             <Tabs
