@@ -10,12 +10,15 @@ import DialogTitle from '@mui/material/DialogTitle';
 import Grid from '@mui/material/Grid';
 import IconButton from "@material-ui/core/IconButton";
 import ListItemText from '@mui/material/ListItemText';
+import PopoutButton from './PopoutButton';
+import ReloadButton from './ReloadButton';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 
 
 function Log(props) {
     const log = props.value;
+
     if (log === "") {
         return (
             <Box
@@ -32,14 +35,12 @@ function Log(props) {
 
     let logLines = log.split("\n");
     logLines = logLines.filter((line) => {
-        return props.filters.includes(line.slice(28, 35).trim());
+        return props.filters.includes(line.slice(28, 35).trim()) || (line[27] != "[" && props.filters.includes("STDOUT"));
     });
 
     return (
-        <pre>{
-            logLines.join("\n")
-        }
-        </pre>);
+        <pre >{logLines.join("\n")}</pre>
+    );
 }
 
 
@@ -51,26 +52,41 @@ class TaskLog extends React.Component {
             open: props.open,
             task: props.task,
             log: "",
+            url: "/api/v1/tasks/" + props.task.id + "/log",
         };
     }
 
     componentWillReceiveProps(newProps) {
         if (!this.state.open && newProps.open) {
+            var url = "/api/v1/tasks/" + newProps.task.id + "/log";
             this.setState(function(prevState, props) {
-                return { open: newProps.open, log: "", task: newProps.task };
+                return {
+                    open: newProps.open,
+                    task: newProps.task,
+                    url: url,
+                };
             });
-
-            fetch("/api/v1/tasks/" + newProps.task.id + "/log")
-                .then((response) => response.text())
-                .then((data) => {
-                    this.setState(function(prevState, props) { return { log: data }; });
-                })
-                .catch((reason) => {
-                    console.log(reason);
-                });
+            this.fetchLog(url);
         } else {
             this.setState({ open: newProps.open });
         }
+    }
+
+    fetchLog(url) {
+        console.log("Fetching log for " + url);
+
+        this.setState(function(prevState, props) {
+            return { log: "" };
+        });
+
+        fetch(url)
+            .then((response) => response.text())
+            .then((data) => {
+                this.setState(function(prevState, props) { return { log: data }; });
+            })
+        .catch((reason) => {
+            console.log(reason);
+        });
     }
 
     setFilters(filters) {
@@ -111,16 +127,24 @@ class TaskLog extends React.Component {
                             </Grid>
                         </Grid>
                     </Box>
-                    <Box>
-                        <ToggleButtonGroup value={this.state.filters} onChange={(ev, val) => { this.setFilters(val); }}>
-                            <ToggleButton color="primary" value="EXCEPT" >EXCEPT</ToggleButton>
-                            <ToggleButton color="primary" value="DEBUG" >DEBUG</ToggleButton>
-                            <ToggleButton color="primary" value="VERBOSE" >VERBOSE</ToggleButton>
-                            <ToggleButton color="primary" value="INFO" >INFO</ToggleButton>
-                            <ToggleButton color="primary" value="ERROR" >ERROR</ToggleButton>
-                            <ToggleButton color="primary" value="STDOUT" >STDOUT</ToggleButton>
-                            <ToggleButton color="primary" value="STDERR" >STDERR</ToggleButton>
-                        </ToggleButtonGroup>
+                    <Box display="flex">
+                        <Box className="w3-margin-right">
+                            <PopoutButton color="primary" href={this.state.url} />
+                        </Box>
+                        <Box className="w3-margin-right">
+                            <ReloadButton color="primary" onClick={(ev, val) => { this.fetchLog(this.state.url); }} />
+                        </Box>
+                        <Box>
+                            <ToggleButtonGroup value={this.state.filters} onChange={(ev, val) => { this.setFilters(val); }}>
+                                <ToggleButton color="primary" value="EXCEPT" >EXCEPT</ToggleButton>
+                                <ToggleButton color="primary" value="DEBUG" >DEBUG</ToggleButton>
+                                <ToggleButton color="primary" value="VERBOSE" >VERBOSE</ToggleButton>
+                                <ToggleButton color="primary" value="INFO" >INFO</ToggleButton>
+                                <ToggleButton color="primary" value="ERROR" >ERROR</ToggleButton>
+                                <ToggleButton color="primary" value="STDOUT" >STDOUT</ToggleButton>
+                                <ToggleButton color="primary" value="STDERR" >STDERR</ToggleButton>
+                            </ToggleButtonGroup>
+                        </Box>
                     </Box>
                 </Box>
                 <DialogContent dividers={true}>
