@@ -185,6 +185,9 @@ class App extends React.Component {
       var started = task["Started"] === "" ? new Date() : new Date(task["Started"]);
       var qtime = started - queued;
       var seconds = qtime / 1000;
+      if (seconds < 0) {
+        seconds = 0;
+      }
       return seconds;
     })
 
