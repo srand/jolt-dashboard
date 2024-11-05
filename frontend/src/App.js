@@ -168,7 +168,9 @@ class App extends React.Component {
   }
 
   getQueueTimes() {
-    var tasks = this.state.tasks.filter((task) => { return task.Started !== ""; });
+    var tasks = this.state.tasks.filter((task) => {
+      return task.Status === "Running" || task.Status === "Queued" || task.Status === "Passed" || task.Status === "Failed";
+    });
 
     if (tasks.length === 0) {
       this.setState({
@@ -180,7 +182,7 @@ class App extends React.Component {
 
     tasks = tasks.map((task) => {
       var queued = new Date(task["Queued"]);
-      var started = new Date(task["Started"]);
+      var started = task["Started"] === "" ? new Date() : new Date(task["Started"]);
       var qtime = started - queued;
       var seconds = qtime / 1000;
       return seconds;
