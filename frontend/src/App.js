@@ -62,7 +62,6 @@ TabPanel.propTypes = {
 
 class App extends React.Component {
   constructor(props) {
-
     super(props);
     this.state = {
       menuItem: 0,
@@ -70,6 +69,7 @@ class App extends React.Component {
       tasks: [],
       queueTimeAvg: 0,
       queueTimeMed: 0,
+      queueTimeMax: 0,
     };
   }
 
@@ -95,7 +95,6 @@ class App extends React.Component {
         }
         return { tasks: tasks };
       });
-      this.getQueueTimes();
     };
     this.client.onclose = () => {
       if (this.state.updating) {
@@ -105,8 +104,8 @@ class App extends React.Component {
   }
 
   fetchAndConnect() {
-    this.connectWebsocket();
     this.fetchTasks();
+    this.connectWebsocket();
   }
 
   componentDidMount() {
@@ -118,10 +117,11 @@ class App extends React.Component {
       .then((response) => response.json())
       .then((json) => {
         this.setState({ tasks: json });
-        this.getQueueTimes();
+        this.updateMetrics();
+
       })
       .catch((reason) => {
-        console.log(reason);
+        this.updateMetrics();
       });
   }
 
@@ -167,7 +167,7 @@ class App extends React.Component {
     return hours + "h " + minutes + "m " + seconds + "s";
   }
 
-  getQueueTimes() {
+  updateMetrics() {
     var tasks = this.state.tasks.filter((task) => {
       return task.Status === "Running" || task.Status === "Queued" || task.Status === "Passed" || task.Status === "Failed";
     });
@@ -176,11 +176,13 @@ class App extends React.Component {
       this.setState({
         queueTimeAvg: this.formatTime(0),
         queueTimeMed: this.formatTime(0),
+        queueTimeMax: this.formatTime(0),
       });
+      setTimeout(this.updateMetrics.bind(this), 1000);
       return;
     }
 
-    tasks = tasks.map((task) => {
+    tasks = [...tasks].map((task) => {
       var queued = new Date(task["Queued"]);
       var started = task["Started"] === "" ? new Date() : new Date(task["Started"]);
       var qtime = started - queued;
@@ -188,23 +190,37 @@ class App extends React.Component {
       if (seconds < 0) {
         seconds = 0;
       }
-      return seconds;
+      return {
+        "id": task.id,
+        "qtime": seconds,
+        "status": task.Status,
+      };
     })
 
-    tasks = tasks.sort();
+    var queued = tasks.filter((task) => { return task.status === "Queued"; });
+    var qtimes = tasks.map((task) => { return task.qtime; }).sort((a, b) => a - b);
+    var qtimes_queued = queued.map((task) => { return task.qtime; }).sort((a, b) => a - b);
+
+    console.log("tasks: ", tasks);
+    console.log("qtimes: ", qtimes);
+    console.log("qtimes_queued: ", qtimes_queued);
 
     // Calculate average
-    var sum = tasks.reduce((a, b) => a + b, 0);
+    var sum = qtimes.reduce((a, b) => a + b, 0);
     var avg = sum / tasks.length;
 
     // Calculate median
-    var mid = Math.floor(tasks.length / 2);
-    var median = tasks.length % 2 !== 0 ? tasks[mid] : (tasks[mid - 1] + tasks[mid]) / 2;
+    var mid = Math.floor(qtimes.length / 2);
+    var median = qtimes.length % 2 !== 0 ? qtimes[mid] : (qtimes[mid - 1] + qtimes[mid]) / 2;
 
     this.setState({
       queueTimeAvg: this.formatTime(avg),
       queueTimeMed: this.formatTime(median),
+      queueTimeMax: this.formatTime(qtimes_queued.length > 0 ? qtimes_queued[qtimes_queued.length - 1] : 0),
+
     });
+
+    setTimeout(this.updateMetrics.bind(this), 10000);
   }
 
   render() {
@@ -221,6 +237,7 @@ class App extends React.Component {
             <Metric name="Failed (1h)" value={this.state.tasks.filter((task) => { return task.Status === "Failed"; }).length} />
             <Metric name="Queue Time (1h avg)" value={this.state.queueTimeAvg} />
             <Metric name="Queue Time (1h med)" value={this.state.queueTimeMed} />
+            <Metric name="Queue Time (qmax)" value={this.state.queueTimeMax} />
           </div>
           <Paper>
             <Tabs

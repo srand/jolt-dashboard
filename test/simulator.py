@@ -89,4 +89,4 @@ while True:
         tasks[i] = task = Task()
         task.post_queued()
 
-    time.sleep(.1)
+    time.sleep(3)
