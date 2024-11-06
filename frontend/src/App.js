@@ -201,10 +201,6 @@ class App extends React.Component {
     var qtimes = tasks.map((task) => { return task.qtime; }).sort((a, b) => a - b);
     var qtimes_queued = queued.map((task) => { return task.qtime; }).sort((a, b) => a - b);
 
-    console.log("tasks: ", tasks);
-    console.log("qtimes: ", qtimes);
-    console.log("qtimes_queued: ", qtimes_queued);
-
     // Calculate average
     var sum = qtimes.reduce((a, b) => a + b, 0);
     var avg = sum / tasks.length;
