@@ -158,13 +158,20 @@ class App extends React.Component {
     // Round to integer
     seconds = Math.round(seconds);
 
-    if (hours === 0 && minutes === 0) {
-      return seconds + "s";
+    if (hours > 0) {
+      minutes = Math.round(minutes + seconds / 60);
+      if (minutes >= 60) {
+        hours += 1;
+        minutes = 0;
+      }
+      return hours + "h " + minutes + "m";
     }
-    if (hours === 0) {
+
+    if (minutes > 0) {
       return minutes + "m " + seconds + "s";
     }
-    return hours + "h " + minutes + "m " + seconds + "s";
+
+    return seconds + "s";
   }
 
   updateMetrics() {
