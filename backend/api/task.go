@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/labstack/echo/v4"
 	"github.com/srand/jolt-dashboard/model"
 )
 
@@ -21,14 +21,13 @@ func NewTaskApi(service *model.TaskService) *TaskApi {
 	return &TaskApi{service: service}
 }
 
-func (api *TaskApi) AddTask(c *gin.Context) {
+func (api *TaskApi) AddTask(c echo.Context) error {
 	var event model.TaskEvent
 	var err error
 	var task *model.Task
 
-	if err = c.ShouldBindJSON(&event); err != nil {
-		c.String(http.StatusBadRequest, "bad request")
-		return
+	if err = c.Bind(&event); err != nil {
+		return c.String(http.StatusBadRequest, "bad request")
 	}
 
 	switch event.Event {
@@ -45,40 +44,36 @@ func (api *TaskApi) AddTask(c *gin.Context) {
 	}
 
 	if err != nil {
-		c.String(http.StatusBadRequest, "bad request")
-		return
+		return c.String(http.StatusBadRequest, "bad request")
 	}
 
-	c.JSON(http.StatusOK, task)
+	return c.JSON(http.StatusOK, task)
 }
 
-func (api *TaskApi) GetStatistics(c *gin.Context) {
+func (api *TaskApi) GetStatistics(c echo.Context) error {
 	stats, err := api.service.GetStatistics()
 	if err != nil {
-		c.String(http.StatusInternalServerError, "internal server error")
-		return
+		return c.String(http.StatusInternalServerError, "internal server error")
 	}
 
-	c.JSON(http.StatusOK, stats)
+	return c.JSON(http.StatusOK, stats)
 }
 
-func (api *TaskApi) GetTasks(c *gin.Context) {
+func (api *TaskApi) GetTasks(c echo.Context) error {
 	tasks, err := api.service.GetTasks()
 	if err != nil {
-		c.String(http.StatusBadRequest, "bad request")
-		return
+		return c.String(http.StatusBadRequest, "bad request")
 	}
 
-	c.JSON(http.StatusOK, tasks)
+	return c.JSON(http.StatusOK, tasks)
 }
 
-func (api *TaskApi) GetTaskEvents(c *gin.Context) {
+func (api *TaskApi) GetTaskEvents(c echo.Context) error {
 	upgrader := websocket.Upgrader{}
-	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	ws, err := upgrader.Upgrade(c.Response().Writer, c.Request(), nil)
 	if err != nil {
 		err = fmt.Errorf("failed to upgrade to websocket: %w", err)
-		c.String(http.StatusBadRequest, err.Error())
-		return
+		return c.String(http.StatusBadRequest, err.Error())
 	}
 	defer ws.Close()
 
@@ -117,41 +112,37 @@ func (api *TaskApi) GetTaskEvents(c *gin.Context) {
 	}
 
 	cancel()
+	return nil
 }
 
-func (api *TaskApi) DeleteTask(c *gin.Context) {
+func (api *TaskApi) DeleteTask(c echo.Context) error {
 	uuid, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		c.String(http.StatusBadRequest, "bad request")
-		return
+		return c.String(http.StatusBadRequest, "bad request")
 	}
 
 	task, err := api.service.GetTask(uuid)
 	if err != nil {
-		c.String(http.StatusBadRequest, "bad request")
-		return
+		return c.String(http.StatusBadRequest, "bad request")
 	}
 
 	err = api.service.DeleteTask(task)
 	if err != nil {
-		c.String(http.StatusBadRequest, "bad request")
-		return
+		return c.String(http.StatusBadRequest, "bad request")
 	}
 
-	c.String(http.StatusOK, "")
+	return c.String(http.StatusOK, "")
 }
 
-func (api *TaskApi) GetTaskLog(c *gin.Context) {
+func (api *TaskApi) GetTaskLog(c echo.Context) error {
 	uuid, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		c.String(http.StatusBadRequest, "bad request")
-		return
+		return c.String(http.StatusBadRequest, "bad request")
 	}
 
 	task, err := api.service.GetTask(uuid)
 	if err != nil || task.Log == "" {
-		c.String(http.StatusNotFound, "not found")
-		return
+		return c.String(http.StatusNotFound, "not found")
 	}
 
 	transport := &http.Transport{
@@ -163,13 +154,11 @@ func (api *TaskApi) GetTaskLog(c *gin.Context) {
 	client := &http.Client{Transport: transport}
 	response, err := client.Get(task.Log)
 	if err != nil {
-		c.String(http.StatusBadGateway, err.Error())
-		return
+		return c.String(http.StatusBadGateway, err.Error())
 	}
 
 	reader := response.Body
-	contentLength := response.ContentLength
 	contentType := response.Header.Get("Content-Type")
 
-	c.DataFromReader(http.StatusOK, contentLength, contentType, reader, nil)
+	return c.Stream(http.StatusOK, contentType, reader)
 }

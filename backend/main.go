@@ -1,6 +1,8 @@
 package main
 
 import (
+	"net/http"
+
 	"github.com/srand/jolt-dashboard/api"
 	model "github.com/srand/jolt-dashboard/model"
 )
@@ -12,5 +14,5 @@ func main() {
 	taskApi := api.NewTaskApi(taskService)
 
 	router := api.NewRouter(taskApi)
-	router.Run()
+	http.ListenAndServe(":8080", router)
 }
