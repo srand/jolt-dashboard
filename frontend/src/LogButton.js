@@ -1,6 +1,6 @@
 import ArticleIcon from "@mui/icons-material/Article";
-import FormControlLabel from "@material-ui/core/FormControlLabel";
-import IconButton from "@material-ui/core/IconButton";
+import FormControlLabel from "@mui/material/FormControlLabel";
+import IconButton from "@mui/material/IconButton";
 
 
 const LogButton = ({ onClick, disabled }) => {

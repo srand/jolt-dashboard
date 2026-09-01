@@ -8,7 +8,7 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogTitle from '@mui/material/DialogTitle';
 import Grid from '@mui/material/Grid';
-import IconButton from "@material-ui/core/IconButton";
+import IconButton from "@mui/material/IconButton";
 import ListItemText from '@mui/material/ListItemText';
 import PopoutButton from './PopoutButton';
 import ReloadButton from './ReloadButton';
@@ -35,7 +35,7 @@ function Log(props) {
 
     let logLines = log.split("\n");
     logLines = logLines.filter((line) => {
-        return props.filters.includes(line.slice(28, 35).trim()) || (line[27] != "[" && props.filters.includes("STDOUT"));
+        return props.filters.includes(line.slice(28, 35).trim()) || (line[27] !== "[" && props.filters.includes("STDOUT"));
     });
 
     return (

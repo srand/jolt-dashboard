@@ -5,17 +5,17 @@ import React from 'react';
 import Metric from './Metric'
 import Tasks from './Tasks';
 import Workers from './Workers';
-import Tabs from '@material-ui/core/Tabs';
-import Tab from '@material-ui/core/Tab';
-import Box from '@material-ui/core/Box';
-import Typography from '@material-ui/core/Typography';
+import Tabs from '@mui/material/Tabs';
+import Tab from '@mui/material/Tab';
+import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
 import PropTypes from 'prop-types';
-import Paper from '@material-ui/core/Paper';
+import Paper from '@mui/material/Paper';
 
 
 import { ThemeProvider, createTheme } from '@mui/material/styles';
-import red from '@material-ui/core/colors/red';
-import green from '@material-ui/core/colors/green';
+import red from '@mui/material/colors/red';
+import green from '@mui/material/colors/green';
 
 
 const theme = createTheme({
