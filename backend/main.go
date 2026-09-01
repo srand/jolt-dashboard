@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"log"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -17,11 +16,6 @@ func main() {
 	schedulerUri := os.Getenv("JOLT_SCHEDULER_URI")
 	if schedulerUri == "" {
 		schedulerUri = "tcp://jolt-scheduler:9090"
-	}
-
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
 	}
 
 	db := model.NewDatabase()
@@ -38,7 +32,7 @@ func main() {
 	go scheduler.NewClient(schedulerUri, taskService, workerService).Run(ctx)
 
 	router := api.NewRouter(api.NewTaskApi(taskService), api.NewWorkerApi(workerService))
-	if err := http.ListenAndServe(":"+port, router); err != nil {
+	if err := router.Run(ctx); err != nil {
 		log.Fatal(err)
 	}
 }

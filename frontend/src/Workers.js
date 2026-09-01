@@ -9,10 +9,11 @@ class Workers extends React.Component {
         super(props);
         this.state = {
             columns: [
-                { field: 'Worker', headerName: 'Worker', flex: 2 },
-                { field: 'Name', headerName: 'Task', flex: 4 },
-                { field: 'Identity', headerName: 'Identity', flex: 2 },
-                { field: 'Started', headerName: 'Started', flex: 2 },
+                { field: 'Hostname', headerName: 'Worker', flex: 2 },
+                { field: 'Labels', headerName: 'Labels', flex: 2 },
+                { field: 'TaskName', headerName: 'Task', flex: 4 },
+                { field: 'TaskStatus', headerName: 'Status', flex: 1 },
+                { field: 'Enlisted', headerName: 'Enlisted', flex: 2 },
                 {
                     field: "actions",
                     headerName: "Actions",
@@ -23,44 +24,19 @@ class Workers extends React.Component {
                     renderCell: (params) => {
                         return (
                             <div>
-                                <LogButton onClick={() => this.onLogClick(params.row)} disabled={params.row["Log"] === ""} />
+                                <LogButton onClick={() => this.onLogClick(params.row)} disabled={params.row["TaskInstance"] === ""} />
                             </div>
                         );
                     }
                 },
             ],
             logOpen: false,
-            logTask: { "Log": "", "Name": "" },
-            rows: this.workersFromTasks(props.value),
+            logTask: { "id": "", "Name": "" },
         };
     }
 
-    workersFromTasks(tasks) {
-        var map = new Map();
-
-        for (var i = 0; i < tasks.length; i++) {
-            let task = tasks[i]
-
-            if (task["Worker"] === "") {
-                continue;
-            }
-            if (!map.has(task["Worker"])) {
-                map.set(task["Worker"], { "id": task["Worker"], "Worker": task["Worker"], "Started": "", "Log": "" });
-            }
-            if (task["Status"] === "Running" && map.get(task["Worker"])["Started"] < task["Started"]) {
-                map.set(task["Worker"], task);
-            }
-        }
-
-        return Array.from(map.values());
-    }
-
-    componentWillReceiveProps(newProps) {
-        this.setState({ rows: this.workersFromTasks(newProps.value) })
-    }
-
-    onLogClick(task) {
-        this.setState({ logOpen: true, logTask: task });
+    onLogClick(worker) {
+        this.setState({ logOpen: true, logTask: { "id": worker["TaskInstance"], "Name": worker["TaskName"] } });
     }
 
     onLogClose() {
@@ -78,15 +54,14 @@ class Workers extends React.Component {
 
                 <DataGrid
                     autoHeight
-                    so
                     initialState={{
                         sorting: {
-                            sortModel: [{ field: 'Worker', sort: 'asc' }],
+                            sortModel: [{ field: 'Hostname', sort: 'asc' }],
                         },
                     }}
                     rowHeight={40}
                     width="100%"
-                    rows={this.state.rows}
+                    rows={this.props.value}
                     columns={this.state.columns} />
             </div>
         )

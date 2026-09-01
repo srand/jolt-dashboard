@@ -67,18 +67,20 @@ class App extends React.Component {
       menuItem: 0,
       updating: true,
       tasks: [],
+      workers: [],
       queueTimeAvg: 0,
       queueTimeMed: 0,
       queueTimeMax: 0,
     };
   }
 
+  websocketUrl(path) {
+    const protocol = window.location.protocol === "https:" ? "wss://" : "ws://";
+    return protocol + window.location.host + path;
+  }
+
   connectWebsocket() {
-    if (window.location.protocol === "https:") {
-      this.client = new WebSocket('wss://' + window.location.host + '/api/v1/tasks/events');
-    } else {
-      this.client = new WebSocket('ws://' + window.location.host + '/api/v1/tasks/events');
-    }
+    this.client = new WebSocket(this.websocketUrl('/api/v1/tasks/events'));
     this.client.onmessage = (message) => {
       if (!this.state.updating) {
         this.client.close();
@@ -103,13 +105,50 @@ class App extends React.Component {
     };
   }
 
+  connectWorkerWebsocket() {
+    // Reconnects are driven by the task socket, so drop any previous one.
+    if (this.workerClient) {
+      this.workerClient.close();
+    }
+
+    this.workerClient = new WebSocket(this.websocketUrl('/api/v1/workers/events'));
+    this.workerClient.onmessage = (message) => {
+      if (!this.state.updating) {
+        this.workerClient.close();
+        return
+      }
+
+      var worker = JSON.parse(message.data);
+      this.setState(function (prevState, props) {
+        let workers = prevState.workers.filter(function (worker2) {
+          return worker2.id !== worker.id;
+        })
+        if (worker.TaskStatus !== "Deleted") {
+          workers.push(worker);
+        }
+        return { workers: workers };
+      });
+    };
+  }
+
   fetchAndConnect() {
     this.fetchTasks();
+    this.fetchWorkers();
     this.connectWebsocket();
+    this.connectWorkerWebsocket();
   }
 
   componentDidMount() {
     this.fetchAndConnect();
+  }
+
+  fetchWorkers() {
+    fetch("/api/v1/workers")
+      .then((response) => response.json())
+      .then((json) => {
+        this.setState({ workers: json });
+      })
+      .catch((reason) => { });
   }
 
   fetchTasks() {
@@ -264,7 +303,7 @@ class App extends React.Component {
             />
           </TabPanel>
           <TabPanel value={this.state.menuItem} index={1}>
-            <Workers value={this.state.tasks} />
+            <Workers value={this.state.workers} />
           </TabPanel>
         </ThemeProvider>
       </div>

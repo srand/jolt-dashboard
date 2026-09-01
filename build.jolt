@@ -41,7 +41,7 @@ class Run(Task):
 
     def run (self, deps, tools):
         self.context = tools.builddir()
-        with tools.cwd(self.context):
+        with tools.cwd(self.context), tools.environ(PORT=8082, JOLT_SCHEDULER_URI="tcp://:9090"):
             deps["backend"].copy("*", ".")
             deps["frontend"].copy("*", "static/")
             tools.run("bin/backend")
