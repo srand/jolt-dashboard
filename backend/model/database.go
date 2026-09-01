@@ -12,7 +12,11 @@ type Database struct {
 }
 
 func NewDatabase() *Database {
-	db, err := gorm.Open(sqlite.Open("gorm.db"), &gorm.Config{})
+	return NewDatabaseFromDsn("gorm.db")
+}
+
+func NewDatabaseFromDsn(dsn string) *Database {
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		log.Fatal(err)
 	}

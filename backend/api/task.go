@@ -21,35 +21,6 @@ func NewTaskApi(service *model.TaskService) *TaskApi {
 	return &TaskApi{service: service}
 }
 
-func (api *TaskApi) AddTask(c echo.Context) error {
-	var event model.TaskEvent
-	var err error
-	var task *model.Task
-
-	if err = c.Bind(&event); err != nil {
-		return c.String(http.StatusBadRequest, "bad request")
-	}
-
-	switch event.Event {
-	case "queued":
-		task, err = api.service.TaskQueued(&event)
-	case "started":
-		task, err = api.service.TaskStarted(&event)
-	case "finished":
-		task, err = api.service.TaskFinished(&event)
-	case "failed":
-		task, err = api.service.TaskFailed(&event)
-	case "cancelled":
-		task, err = api.service.TaskCancelled(&event)
-	}
-
-	if err != nil {
-		return c.String(http.StatusBadRequest, "bad request")
-	}
-
-	return c.JSON(http.StatusOK, task)
-}
-
 func (api *TaskApi) GetStatistics(c echo.Context) error {
 	stats, err := api.service.GetStatistics()
 	if err != nil {

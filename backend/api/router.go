@@ -21,20 +21,22 @@ func HttpLogger(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-
-func NewRouter(apiTask *TaskApi) http.Handler {
+func NewRouter(
+	apiTask *TaskApi,
+	apiWorker *WorkerApi,
+) http.Handler {
 	r := echo.New()
 
 	r.Use(HttpLogger)
 
 	v1 := r.Group("/api/v1/")
-	v1.POST("tasks", apiTask.AddTask)
 	v1.GET("statistics", apiTask.GetStatistics)
 	v1.GET("tasks", apiTask.GetTasks)
 	// v1.GET("task/:id", apiTask.GetTask)
 	v1.DELETE("tasks/:id", apiTask.DeleteTask)
 	v1.GET("tasks/:id/log", apiTask.GetTaskLog)
 	v1.GET("tasks/events", apiTask.GetTaskEvents)
+	v1.GET("workers", apiWorker.GetWorkers)
 
 	r.Static("/", "static")
 	r.RouteNotFound("/*", func(ctx echo.Context) error {

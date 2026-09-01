@@ -2,9 +2,12 @@ package model
 
 import (
 	"log"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/srand/jolt-dashboard/protocol"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type Task struct {
@@ -20,32 +23,62 @@ type Task struct {
 	Log        string
 }
 
+// Timestamps are stored as strings in the format the web application parses.
+const timeFormat = "2006-01-02 15:04:05.999"
+
 func Now() string {
-	return time.Now().Format("2006-01-02 15:04:05.999")
+	return time.Now().Format(timeFormat)
 }
 
-func NewTaskFromEvent(event *TaskEvent) *Task {
-	task := Task{}
-	task.Identity = event.Identity
-	task.Instance = event.Instance
-	task.RoutingKey = event.RoutingKey
-	task.Name = event.Name
-	task.Queued = Now()
-	task.Status = "Queued"
-	task.Worker = event.Hostname
-	task.Log = event.Log
-	return &task
+func FormatTime(timestamp *timestamppb.Timestamp) string {
+	if timestamp == nil {
+		return ""
+	}
+	return timestamp.AsTime().Local().Format(timeFormat)
 }
 
-type TaskEvent struct {
-	Event      string
-	Hostname   string
-	RoutingKey string `json:"routing_key,omitempty"`
-	Identity   string
-	Instance   uuid.UUID
-	Name       string
-	Role       string
-	Log        string
+// TaskStatusName maps a scheduler task status onto the status names used by
+// the dashboard UI.
+func TaskStatusName(status protocol.TaskStatus) string {
+	switch status {
+	case protocol.TaskStatus_TASK_QUEUED, protocol.TaskStatus_TASK_CREATED:
+		return "Queued"
+	case protocol.TaskStatus_TASK_RUNNING:
+		return "Running"
+	case protocol.TaskStatus_TASK_PASSED,
+		protocol.TaskStatus_TASK_UPLOADED,
+		protocol.TaskStatus_TASK_DOWNLOADED,
+		protocol.TaskStatus_TASK_SKIPPED:
+		return "Passed"
+	case protocol.TaskStatus_TASK_FAILED,
+		protocol.TaskStatus_TASK_ERROR,
+		protocol.TaskStatus_TASK_UNSTABLE:
+		return "Failed"
+	case protocol.TaskStatus_TASK_CANCELLED:
+		return "Cancelled"
+	default:
+		return "Queued"
+	}
+}
+
+func NewTaskFromInfo(info *protocol.TaskInfo) (*Task, error) {
+	instance, err := uuid.Parse(info.GetInstance())
+	if err != nil {
+		return nil, err
+	}
+
+	return &Task{
+		Instance:   instance,
+		Name:       info.GetName(),
+		Identity:   info.GetIdentity(),
+		RoutingKey: strings.Join(info.GetLabels(), ","),
+		Worker:     info.GetWorkerHostname(),
+		Status:     TaskStatusName(info.GetStatus()),
+		Queued:     FormatTime(info.GetQueuedAt()),
+		Started:    FormatTime(info.GetStartedAt()),
+		Ended:      FormatTime(info.GetEndedAt()),
+		Log:        info.GetLog(),
+	}, nil
 }
 
 type TaskService struct {
@@ -67,8 +100,8 @@ func (service *TaskService) garbageCollect() {
 	timer := time.NewTicker(time.Minute)
 	for {
 		<-timer.C
-		queuedCutoff := time.Now().Add(-(time.Hour * 48)).Format("2006-01-02 15:04:05.999")
-		endedCutOff := time.Now().Add(-time.Hour).Format("2006-01-02 15:04:05.999")
+		queuedCutoff := time.Now().Add(-(time.Hour * 48)).Format(timeFormat)
+		endedCutOff := time.Now().Add(-time.Hour).Format(timeFormat)
 
 		var tasks []Task
 		service.Db.db.Where("(queued < ?) or (ended != '' and ended < ?) ", queuedCutoff, endedCutOff).Find(&tasks)
@@ -80,17 +113,6 @@ func (service *TaskService) garbageCollect() {
 }
 
 func (service *TaskService) updateTask(task *Task) error {
-	// Force-end tasks already running on same worker
-	if task.Status == "Running" {
-		var tasks []Task
-		service.Db.db.Where("worker = ? and started != '' and ended = ''", task.Worker).Find(&tasks)
-		for _, lost := range tasks {
-			lost.Status = "Passed"
-			lost.Ended = Now()
-			service.Db.db.Save(lost)
-			service.Broadcast.Send(lost)
-		}
-	}
 	result := service.Db.db.Save(task)
 	service.Broadcast.Send(task)
 	return result.Error
@@ -212,70 +234,61 @@ func (service *TaskService) DeleteTask(task *Task) error {
 	return service.Db.Delete(task)
 }
 
-func (service *TaskService) TaskQueued(event *TaskEvent) (*Task, error) {
-	task := NewTaskFromEvent(event)
-	task.Worker = ""
-	return task, service.updateTask(task)
-}
-
-func (service *TaskService) TaskStarted(event *TaskEvent) (*Task, error) {
-	task, err := service.GetTask(event.Instance)
+// ApplyTaskInfo records the scheduler's view of a single task.
+func (service *TaskService) ApplyTaskInfo(info *protocol.TaskInfo) error {
+	task, err := NewTaskFromInfo(info)
 	if err != nil {
-		task = NewTaskFromEvent(event)
+		return err
 	}
+
+	// The scheduler clears the log URL for queued and cancelled tasks, but a
+	// log recorded by an earlier attempt is still worth keeping.
 	if task.Log == "" {
-		task.Log = event.Log
+		if previous, err := service.GetTask(task.Instance); err == nil {
+			task.Log = previous.Log
+		}
 	}
-	task.Started = Now()
-	task.Status = "Running"
-	task.Worker = event.Hostname
-	return task, service.updateTask(task)
+
+	return service.updateTask(task)
 }
 
-func (service *TaskService) TaskFinished(event *TaskEvent) (*Task, error) {
-	task, err := service.GetTask(event.Instance)
-	if err != nil {
-		task = NewTaskFromEvent(event)
-		task.Started = Now()
-	}
-	if task.Worker == "" {
-		task.Worker = event.Hostname
-	}
-	if task.Log == "" {
-		task.Log = event.Log
-	}
-	task.Ended = Now()
-	task.Status = "Passed"
-	return task, service.updateTask(task)
-}
+// ApplySnapshot reconciles the database with the scheduler's complete view of
+// its queued and running tasks. Tasks the dashboard still believes to be in
+// progress but that the scheduler no longer knows about are terminated; they
+// were lost while the dashboard was disconnected.
+func (service *TaskService) ApplySnapshot(tasks []*protocol.TaskInfo) error {
+	present := map[uuid.UUID]bool{}
 
-func (service *TaskService) TaskFailed(event *TaskEvent) (*Task, error) {
-	task, err := service.GetTask(event.Instance)
-	if err != nil {
-		task = NewTaskFromEvent(event)
-		task.Started = Now()
-	}
-	if task.Worker == "" {
-		task.Worker = event.Hostname
-	}
-	if task.Log == "" {
-		task.Log = event.Log
-	}
-	task.Ended = Now()
-	task.Status = "Failed"
-	return task, service.updateTask(task)
-}
+	for _, info := range tasks {
+		task, err := NewTaskFromInfo(info)
+		if err != nil {
+			log.Println("discarding task with malformed instance id:", err)
+			continue
+		}
+		present[task.Instance] = true
 
-func (service *TaskService) TaskCancelled(event *TaskEvent) (*Task, error) {
-	task, err := service.GetTask(event.Instance)
-	if err != nil {
-		task = NewTaskFromEvent(event)
+		if err := service.ApplyTaskInfo(info); err != nil {
+			return err
+		}
 	}
-	if task.Worker == "" {
-		task.Worker = event.Hostname
+
+	var stale []Task
+	result := service.Db.db.Where("status in ?", []string{"Queued", "Running"}).Find(&stale)
+	if result.Error != nil {
+		return result.Error
 	}
-	task.Log = ""
-	task.Ended = Now()
-	task.Status = "Cancelled"
-	return task, service.updateTask(task)
+
+	for _, task := range stale {
+		if present[task.Instance] {
+			continue
+		}
+
+		task.Status = "Cancelled"
+		task.Ended = Now()
+		if err := service.updateTask(&task); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
