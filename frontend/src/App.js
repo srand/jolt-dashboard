@@ -215,7 +215,7 @@ class App extends React.Component {
 
   updateMetrics() {
     var tasks = this.state.tasks.filter((task) => {
-      return task.Status === "Running" || task.Status === "Queued" || task.Status === "Passed" || task.Status === "Failed";
+      return task.Status === "Running" || task.Status === "Queued" || task.Status === "Assigned" || task.Status === "Passed" || task.Status === "Failed";
     });
 
     if (tasks.length === 0) {
@@ -243,7 +243,7 @@ class App extends React.Component {
       };
     })
 
-    var queued = tasks.filter((task) => { return task.status === "Queued"; });
+    var queued = tasks.filter((task) => { return task.status === "Queued" || task.status === "Assigned"; });
     var qtimes = tasks.map((task) => { return task.qtime; }).sort((a, b) => a - b);
     var qtimes_queued = queued.map((task) => { return task.qtime; }).sort((a, b) => a - b);
 
@@ -273,7 +273,7 @@ class App extends React.Component {
             <div className="w3-container w3-cell w3-margin w3-padding w3-center">
               <h1 className="jolt-box">jolt</h1>
             </div>
-            <Metric name="In Queue" value={this.state.tasks.filter((task) => { return task.Status === "Queued"; }).length} />
+            <Metric name="In Queue" value={this.state.tasks.filter((task) => { return task.Status === "Queued" || task.Status === "Assigned"; }).length} />
             <Metric name="In Progress" value={this.state.tasks.filter((task) => { return task.Status === "Running"; }).length} />
             <Metric name="Completed (1h)" value={this.state.tasks.filter((task) => { return task.Status === "Passed" || task.Status === "Failed"; }).length} />
             <Metric name="Failed (1h)" value={this.state.tasks.filter((task) => { return task.Status === "Failed"; }).length} />

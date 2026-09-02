@@ -43,6 +43,8 @@ func TaskStatusName(status protocol.TaskStatus) string {
 	switch status {
 	case protocol.TaskStatus_TASK_QUEUED, protocol.TaskStatus_TASK_CREATED:
 		return "Queued"
+	case protocol.TaskStatus_TASK_ASSIGNED:
+		return "Assigned"
 	case protocol.TaskStatus_TASK_RUNNING:
 		return "Running"
 	case protocol.TaskStatus_TASK_PASSED,
@@ -140,7 +142,7 @@ func (service *TaskService) GetStatistics() (*Statistics, error) {
 		}
 
 		switch task.Status {
-		case "Queued":
+		case "Queued", "Assigned":
 			stats.Tasks.Queued++
 			stats.Tasks.WaitTime.AddTask(&task)
 			if task.RoutingKey != "" {
@@ -273,7 +275,7 @@ func (service *TaskService) ApplySnapshot(tasks []*protocol.TaskInfo) error {
 	}
 
 	var stale []Task
-	result := service.Db.db.Where("status in ?", []string{"Queued", "Running"}).Find(&stale)
+	result := service.Db.db.Where("status in ?", []string{"Queued", "Assigned", "Running"}).Find(&stale)
 	if result.Error != nil {
 		return result.Error
 	}

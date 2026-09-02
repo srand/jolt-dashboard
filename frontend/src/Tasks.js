@@ -19,12 +19,13 @@ class Tasks extends React.Component {
       columns: [
         { field: 'RoutingKey', headerName: 'Labels', flex: 1 },
         { field: 'Worker', headerName: 'Worker', flex: 2 },
-        { field: 'Name', headerName: 'Name', flex: 4, resizeable: true},
+        { field: 'Name', headerName: 'Name', flex: 4, resizeable: true },
         { field: 'Identity', headerName: 'Identity', flex: 2 },
         { field: 'Queued', headerName: 'Queued', flex: 2 },
         { field: 'Started', headerName: 'Started', flex: 2 },
         { field: 'Ended', headerName: 'Finished', flex: 2 },
-        { field: 'Duration',
+        {
+          field: 'Duration',
           headerName: 'Duration',
           flex: 1,
           align: 'center',
@@ -81,7 +82,7 @@ class Tasks extends React.Component {
       ],
       rows: value,
       filteredRows: value,
-      filters: ["Queued", "Running", "Passed", "Failed", "Cancelled"],
+      filters: ["Queued", "Assigned", "Running", "Passed", "Failed", "Cancelled"],
       logOpen: false,
       logTask: { "Log": "", "Name": "" },
     };
@@ -122,6 +123,7 @@ class Tasks extends React.Component {
           <Box>
             <ToggleButtonGroup value={this.state.filters} onChange={(ev, val) => { this.setFilters(val); }}>
               <ToggleButton color="primary" value="Queued" >Queued</ToggleButton>
+              <ToggleButton color="primary" value="Assigned" >Assigned</ToggleButton>
               <ToggleButton color="primary" value="Running" >Running</ToggleButton>
               <ToggleButton color="primary" value="Passed" >Passed</ToggleButton>
               <ToggleButton color="primary" value="Failed" >Failed</ToggleButton>

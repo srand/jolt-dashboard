@@ -80,11 +80,12 @@ func TestApplySnapshotTerminatesLostTasks(t *testing.T) {
 	tasks, _ := newTestServices(t)
 
 	lostQueued := newTaskInfo("lost/queued", protocol.TaskStatus_TASK_QUEUED)
+	lostAssigned := newTaskInfo("lost/assigned", protocol.TaskStatus_TASK_ASSIGNED)
 	lostRunning := newTaskInfo("lost/running", protocol.TaskStatus_TASK_RUNNING)
 	completed := newTaskInfo("done", protocol.TaskStatus_TASK_PASSED)
 	survivor := newTaskInfo("survivor", protocol.TaskStatus_TASK_QUEUED)
 
-	for _, info := range []*protocol.TaskInfo{lostQueued, lostRunning, completed, survivor} {
+	for _, info := range []*protocol.TaskInfo{lostQueued, lostAssigned, lostRunning, completed, survivor} {
 		if err := tasks.ApplyTaskInfo(info); err != nil {
 			t.Fatal(err)
 		}
@@ -97,7 +98,7 @@ func TestApplySnapshotTerminatesLostTasks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, info := range []*protocol.TaskInfo{lostQueued, lostRunning} {
+	for _, info := range []*protocol.TaskInfo{lostQueued, lostAssigned, lostRunning} {
 		stored, err := tasks.GetTask(uuid.MustParse(info.Instance))
 		if err != nil {
 			t.Fatal(err)
@@ -133,7 +134,7 @@ func TestApplySnapshotTerminatesLostTasks(t *testing.T) {
 		updates[task.Name] = task.Status
 	}
 
-	if updates["lost/queued"] != "Cancelled" || updates["lost/running"] != "Cancelled" {
+	if updates["lost/queued"] != "Cancelled" || updates["lost/assigned"] != "Cancelled" || updates["lost/running"] != "Cancelled" {
 		t.Errorf("lost tasks were not broadcast: %v", updates)
 	}
 }
@@ -181,6 +182,7 @@ func TestTaskStatusNames(t *testing.T) {
 	cases := map[protocol.TaskStatus]string{
 		protocol.TaskStatus_TASK_CREATED:    "Queued",
 		protocol.TaskStatus_TASK_QUEUED:     "Queued",
+		protocol.TaskStatus_TASK_ASSIGNED:   "Assigned",
 		protocol.TaskStatus_TASK_RUNNING:    "Running",
 		protocol.TaskStatus_TASK_PASSED:     "Passed",
 		protocol.TaskStatus_TASK_UPLOADED:   "Passed",
