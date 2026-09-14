@@ -22,6 +22,7 @@ class Tasks extends React.Component {
         { field: 'Name', headerName: 'Name', flex: 4, resizeable: true },
         { field: 'Identity', headerName: 'Identity', flex: 2 },
         { field: 'Queued', headerName: 'Queued', flex: 2 },
+        { field: 'Assigned', headerName: 'Assigned', flex: 2 },
         { field: 'Started', headerName: 'Started', flex: 2 },
         { field: 'Ended', headerName: 'Finished', flex: 2 },
         {

@@ -37,10 +37,12 @@ func TestApplyTaskInfoRecordsSchedulerTimestamps(t *testing.T) {
 	tasks, _ := newTestServices(t)
 
 	queued := time.Now().Add(-time.Hour)
+	assigned := time.Now().Add(-time.Minute * 30)
 	started := time.Now().Add(-time.Minute)
 
 	info := newTaskInfo("build/lib", protocol.TaskStatus_TASK_RUNNING)
 	info.QueuedAt = timestamppb.New(queued)
+	info.AssignedAt = timestamppb.New(assigned)
 	info.StartedAt = timestamppb.New(started)
 	info.WorkerHostname = "builder1"
 	info.Labels = []string{"fast", "linux"}
@@ -66,11 +68,52 @@ func TestApplyTaskInfoRecordsSchedulerTimestamps(t *testing.T) {
 	if want := queued.Local().Format(timeFormat); stored.Queued != want {
 		t.Errorf("queued = %q, want %q", stored.Queued, want)
 	}
+	if want := assigned.Local().Format(timeFormat); stored.Assigned != want {
+		t.Errorf("assigned = %q, want %q", stored.Assigned, want)
+	}
 	if want := started.Local().Format(timeFormat); stored.Started != want {
 		t.Errorf("started = %q, want %q", stored.Started, want)
 	}
 	if stored.Ended != "" {
 		t.Errorf("ended = %q, want empty", stored.Ended)
+	}
+}
+
+func TestApplyTaskInfoPreservesAssignedTimestamp(t *testing.T) {
+	tasks, _ := newTestServices(t)
+	info := newTaskInfo("build/lib", protocol.TaskStatus_TASK_QUEUED)
+
+	if err := tasks.ApplyTaskInfo(info); err != nil {
+		t.Fatal(err)
+	}
+
+	info.Status = protocol.TaskStatus_TASK_ASSIGNED
+	assignedAt := time.Now().Add(-time.Minute * 30)
+	info.AssignedAt = timestamppb.New(assignedAt)
+	if err := tasks.ApplyTaskInfo(info); err != nil {
+		t.Fatal(err)
+	}
+
+	assigned, err := tasks.GetTask(uuid.MustParse(info.Instance))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := assignedAt.Local().Format(timeFormat); assigned.Assigned != want {
+		t.Fatalf("assigned = %q, want %q", assigned.Assigned, want)
+	}
+
+	info.Status = protocol.TaskStatus_TASK_RUNNING
+	info.StartedAt = timestamppb.Now()
+	if err := tasks.ApplyTaskInfo(info); err != nil {
+		t.Fatal(err)
+	}
+
+	running, err := tasks.GetTask(uuid.MustParse(info.Instance))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if running.Assigned != assigned.Assigned {
+		t.Errorf("assigned timestamp changed from %q to %q", assigned.Assigned, running.Assigned)
 	}
 }
 

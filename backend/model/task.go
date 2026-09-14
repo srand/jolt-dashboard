@@ -18,6 +18,7 @@ type Task struct {
 	Worker     string
 	Status     string
 	Queued     string
+	Assigned   string
 	Started    string
 	Ended      string
 	Log        string
@@ -77,6 +78,7 @@ func NewTaskFromInfo(info *protocol.TaskInfo) (*Task, error) {
 		Worker:     info.GetWorkerHostname(),
 		Status:     TaskStatusName(info.GetStatus()),
 		Queued:     FormatTime(info.GetQueuedAt()),
+		Assigned:   FormatTime(info.GetAssignedAt()),
 		Started:    FormatTime(info.GetStartedAt()),
 		Ended:      FormatTime(info.GetEndedAt()),
 		Log:        info.GetLog(),
@@ -243,12 +245,15 @@ func (service *TaskService) ApplyTaskInfo(info *protocol.TaskInfo) error {
 		return err
 	}
 
+	previous, previousErr := service.GetTask(task.Instance)
+	if previousErr == nil && task.Assigned == "" {
+		task.Assigned = previous.Assigned
+	}
+
 	// The scheduler clears the log URL for queued and cancelled tasks, but a
 	// log recorded by an earlier attempt is still worth keeping.
-	if task.Log == "" {
-		if previous, err := service.GetTask(task.Instance); err == nil {
-			task.Log = previous.Log
-		}
+	if task.Log == "" && previousErr == nil {
+		task.Log = previous.Log
 	}
 
 	return service.updateTask(task)
