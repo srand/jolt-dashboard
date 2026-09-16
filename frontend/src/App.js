@@ -285,8 +285,8 @@ class App extends React.Component {
             <Tabs
               value={this.state.menuItem}
               onChange={(event, newItem) => this.handleMenuItemChange(event, newItem)}
-              indicatorColor="secondary"
-              textColor="secondary"
+              indicatorColor="primary"
+              textColor="primary"
               centered
             >
               <Tab label="Tasks" />
