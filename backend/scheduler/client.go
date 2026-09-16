@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mattn/go-sqlite3"
 	"github.com/srand/jolt-dashboard/model"
 	"github.com/srand/jolt-dashboard/protocol"
 	"google.golang.org/grpc"
@@ -20,6 +22,9 @@ const (
 
 	minBackoff = time.Second
 	maxBackoff = 30 * time.Second
+
+	eventRetryAttempts = 3
+	eventRetryDelay    = 250 * time.Millisecond
 )
 
 // Client mirrors the state of a Jolt scheduler into the dashboard database.
@@ -33,6 +38,9 @@ type Client struct {
 	uri     string
 	tasks   *model.TaskService
 	workers *model.WorkerService
+
+	// applyFn is overridden by tests that exercise stream failure handling.
+	applyFn func(*protocol.SchedulerEvent) error
 }
 
 func NewClient(uri string, tasks *model.TaskService, workers *model.WorkerService) *Client {
@@ -85,16 +93,61 @@ func (c *Client) stream(ctx context.Context) error {
 		return err
 	}
 
+	return c.consume(ctx, stream)
+}
+
+type eventStream interface {
+	Recv() (*protocol.SchedulerEvent, error)
+}
+
+// consume applies one event completely before receiving the next one. If a
+// transient SQLite lock cannot be resolved, returning an error reconnects the
+// stream and obtains a fresh scheduler snapshot instead of dropping the event.
+func (c *Client) consume(ctx context.Context, stream eventStream) error {
 	for {
 		event, err := stream.Recv()
 		if err != nil {
 			return err
 		}
 
-		if err := c.apply(event); err != nil {
-			log.Println("failed to apply scheduler event:", err)
+		err = retrySQLite(ctx, eventRetryAttempts, eventRetryDelay, func() error {
+			if c.applyFn != nil {
+				return c.applyFn(event)
+			}
+			return c.apply(event)
+		})
+		if err != nil {
+			return fmt.Errorf("failed to apply scheduler event: %w", err)
 		}
 	}
+}
+
+func retrySQLite(ctx context.Context, attempts int, delay time.Duration, operation func() error) error {
+	var err error
+	for attempt := 0; attempt < attempts; attempt++ {
+		err = operation()
+		if err == nil || !isSQLiteContention(err) {
+			return err
+		}
+		if attempt == attempts-1 {
+			break
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+	return err
+}
+
+func isSQLiteContention(err error) bool {
+	var sqliteErr sqlite3.Error
+	if !errors.As(err, &sqliteErr) {
+		return false
+	}
+	return sqliteErr.Code == sqlite3.ErrBusy || sqliteErr.Code == sqlite3.ErrLocked
 }
 
 func (c *Client) apply(event *protocol.SchedulerEvent) error {
