@@ -24,7 +24,7 @@ class Workers extends React.Component {
                     renderCell: (params) => {
                         return (
                             <div>
-                                <LogButton onClick={() => this.onLogClick(params.row)} disabled={params.row["TaskInstance"] === ""} />
+                                <LogButton onClick={() => this.onLogClick(params.row)} disabled={params.row["TaskLog"] === ""} />
                             </div>
                         );
                     }

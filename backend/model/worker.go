@@ -15,6 +15,7 @@ type Worker struct {
 	TaskInstance string
 	TaskName     string
 	TaskStatus   string
+	TaskLog      string
 	Enlisted     string
 }
 
@@ -42,6 +43,7 @@ func NewWorkerFromInfo(info *protocol.WorkerInfo) *Worker {
 		worker.TaskInstance = task.GetInstance()
 		worker.TaskName = task.GetName()
 		worker.TaskStatus = TaskStatusName(task.GetStatus())
+		worker.TaskLog = task.GetLog()
 	}
 
 	return worker
