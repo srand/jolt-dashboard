@@ -3,6 +3,7 @@ import './w3.css'
 
 import React from 'react';
 import Metric from './Metric'
+import { formatDuration, hasWaitingTask, queueTimeMetrics } from './metrics'
 import Tasks from './Tasks';
 import Workers from './Workers';
 import Tabs from '@mui/material/Tabs';
@@ -14,8 +15,7 @@ import Paper from '@mui/material/Paper';
 
 
 import { ThemeProvider, createTheme } from '@mui/material/styles';
-import red from '@mui/material/colors/red';
-import green from '@mui/material/colors/green';
+import { red, green } from '@mui/material/colors';
 
 
 const theme = createTheme({
@@ -68,9 +68,6 @@ class App extends React.Component {
       updating: true,
       tasks: [],
       workers: [],
-      queueTimeAvg: 0,
-      queueTimeMed: 0,
-      queueTimeMax: 0,
     };
   }
 
@@ -140,6 +137,20 @@ class App extends React.Component {
 
   componentDidMount() {
     this.fetchAndConnect();
+
+    // The queue time of a task that has not started yet grows with the wall
+    // clock, so a changing task list is not enough to keep those metrics
+    // current. Tick while anything is waiting; the task list drives every
+    // other update on its own.
+    this.ticker = setInterval(() => {
+      if (hasWaitingTask(this.state.tasks)) {
+        this.forceUpdate();
+      }
+    }, 1000);
+  }
+
+  componentWillUnmount() {
+    clearInterval(this.ticker);
   }
 
   fetchWorkers() {
@@ -156,12 +167,8 @@ class App extends React.Component {
       .then((response) => response.json())
       .then((json) => {
         this.setState({ tasks: json });
-        this.updateMetrics();
-
       })
-      .catch((reason) => {
-        this.updateMetrics();
-      });
+      .catch((reason) => { });
   }
 
   handleMenuItemChange(event, newItem) {
@@ -188,84 +195,12 @@ class App extends React.Component {
     this.fetchAndConnect();
   }
 
-  formatTime(duration) {
-    // Convert seconds to human readable format
-    var hours = Math.floor(duration / 3600);
-    var minutes = Math.floor((duration % 3600) / 60);
-    var seconds = duration % 60;
-
-    // Round to integer
-    seconds = Math.round(seconds);
-
-    if (hours > 0) {
-      minutes = Math.round(minutes + seconds / 60);
-      if (minutes >= 60) {
-        hours += 1;
-        minutes = 0;
-      }
-      return hours + "h " + minutes + "m";
-    }
-
-    if (minutes > 0) {
-      return minutes + "m " + seconds + "s";
-    }
-
-    return seconds + "s";
-  }
-
-  updateMetrics() {
-    var tasks = this.state.tasks.filter((task) => {
-      return task.Status === "Running" || task.Status === "Queued" || task.Status === "Assigned" || task.Status === "Passed" || task.Status === "Failed";
-    });
-
-    if (tasks.length === 0) {
-      this.setState({
-        queueTimeAvg: this.formatTime(0),
-        queueTimeMed: this.formatTime(0),
-        queueTimeMax: this.formatTime(0),
-      });
-      setTimeout(this.updateMetrics.bind(this), 1000);
-      return;
-    }
-
-    tasks = [...tasks].map((task) => {
-      var queued = new Date(task["Queued"]);
-      var started = task["Started"] === "" ? new Date() : new Date(task["Started"]);
-      var qtime = started - queued;
-      var seconds = qtime / 1000;
-      if (seconds < 0) {
-        seconds = 0;
-      }
-      return {
-        "id": task.id,
-        "qtime": seconds,
-        "status": task.Status,
-      };
-    })
-
-    var queued = tasks.filter((task) => { return task.status === "Queued" || task.status === "Assigned"; });
-    var qtimes = tasks.map((task) => { return task.qtime; }).sort((a, b) => a - b);
-    var qtimes_queued = queued.map((task) => { return task.qtime; }).sort((a, b) => a - b);
-
-    // Calculate average
-    var sum = qtimes.reduce((a, b) => a + b, 0);
-    var avg = sum / tasks.length;
-
-    // Calculate median
-    var mid = Math.floor(qtimes.length / 2);
-    var median = qtimes.length % 2 !== 0 ? qtimes[mid] : (qtimes[mid - 1] + qtimes[mid]) / 2;
-
-    this.setState({
-      queueTimeAvg: this.formatTime(avg),
-      queueTimeMed: this.formatTime(median),
-      queueTimeMax: this.formatTime(qtimes_queued.length > 0 ? qtimes_queued[qtimes_queued.length - 1] : 0),
-
-    });
-
-    setTimeout(this.updateMetrics.bind(this), 10000);
-  }
-
   render() {
+    // Derived here, not held in state: every render then shows the queue
+    // times implied by the tasks currently on screen, with no window in
+    // which the two disagree.
+    const queueTime = queueTimeMetrics(this.state.tasks, Date.now());
+
     return (
       <div>
         <ThemeProvider theme={theme}>
@@ -277,9 +212,9 @@ class App extends React.Component {
             <Metric name="In Progress" value={this.state.tasks.filter((task) => { return task.Status === "Running"; }).length} />
             <Metric name="Completed (1h)" value={this.state.tasks.filter((task) => { return task.Status === "Passed" || task.Status === "Failed"; }).length} />
             <Metric name="Failed (1h)" value={this.state.tasks.filter((task) => { return task.Status === "Failed"; }).length} />
-            <Metric name="Queue Time (1h avg)" value={this.state.queueTimeAvg} />
-            <Metric name="Queue Time (1h med)" value={this.state.queueTimeMed} />
-            <Metric name="Queue Time (qmax)" value={this.state.queueTimeMax} />
+            <Metric name="Queue Time (1h avg)" value={formatDuration(queueTime.average)} />
+            <Metric name="Queue Time (1h med)" value={formatDuration(queueTime.median)} />
+            <Metric name="Queue Time (qmax)" value={formatDuration(queueTime.max)} />
           </div>
           <Paper>
             <Tabs
