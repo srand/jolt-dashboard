@@ -1984,13 +1984,13 @@ Replace `onLogClick` (`frontend/src/Tasks.js:103`):
   }
 ```
 
-Replace the `TaskLog` element (`frontend/src/Tasks.js:113-117`) with a version that prefers the current row for this id and falls back to the snapshot taken at click time:
+Replace the `TaskLog` element (`frontend/src/Tasks.js:113-117`) with a version that prefers the current row for this id and falls back to the snapshot taken at click time. Look in `rows`, not `filteredRows`: a task whose new status the user has filtered out would otherwise vanish from the lookup and leave the dialog believing it is still running.
 
 ```javascript
         <TaskLog
           open={this.state.logOpen}
           onClose={() => { this.onLogClose(); }}
-          task={this.state.filteredRows.find((row) => row.id === this.state.logTaskId) || this.state.logTask}
+          task={this.state.rows.find((row) => row.id === this.state.logTaskId) || this.state.logTask}
         />
 ```
 
