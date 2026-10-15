@@ -305,7 +305,11 @@ which waits for the whole body. It becomes an incremental consumer:
   until they scroll back to the bottom, then resume following.
 
 The initial spinner condition is `log === ""` (`frontend/src/TaskLog.js:22`),
-which still holds: it clears as soon as the first chunk arrives.
+which still holds: it clears on the first batched flush after a chunk
+arrives. Chunks are coalesced on a short timer rather than rendered one
+by one — logstash flushes per line, and a render per line does quadratic
+work on a long log — so "as soon as" means within that interval, well
+inside the latency budget above.
 
 ## Edge cases
 
