@@ -22,6 +22,14 @@ import { isScrolledToBottom } from './scroll';
 // task can be running before its first line is written.
 const RETRY_DELAY_MS = 2000;
 
+// How long to keep retrying a 404 before giving up altogether. Comfortably
+// covers a slow-starting task that has not written its first line yet, while
+// still bounding the retry: a task whose status never turns terminal in this
+// component's eyes (e.g. it is deleted and the row disappears, leaving a
+// stale non-terminal snapshot behind) must still stop polling eventually
+// rather than re-requesting every 2 seconds for the life of the dialog.
+const MAX_RETRY_MS = 5 * 60 * 1000;
+
 // How often to flush buffered stream chunks into state. logstash flushes per
 // line and the proxy flushes per read, so a chatty stream can otherwise
 // deliver one chunk per log line - one render each - to a component that
@@ -34,6 +42,14 @@ const FLUSH_INTERVAL_MS = 150;
 // nothing to display. Overridden with a specific error message when the
 // cause was a failure rather than a genuinely empty log.
 const DEFAULT_EMPTY_MESSAGE = "No log output.";
+
+// Shown instead of DEFAULT_EMPTY_MESSAGE while the task is not yet in a
+// terminal status: "no log output" reads as "this task produced nothing",
+// which is not known to be true for a task that may still write its first
+// line.
+const WAITING_MESSAGE = "Waiting for output…";
+
+const ERROR_MESSAGE = "Error loading log.";
 
 
 function Log(props) {
@@ -72,6 +88,12 @@ function Log(props) {
             );
         }
 
+        // A non-terminal task with nothing on screen yet has not necessarily
+        // produced no output at all - it may simply not have written its
+        // first line. Only claim "no output" once the task can never write
+        // any more; a real error overrides either way.
+        const message = (!props.streamError && !props.taskTerminal) ? WAITING_MESSAGE : props.message;
+
         return (
             <Box
                 display="flex"
@@ -80,13 +102,20 @@ function Log(props) {
                 minHeight="50vh"
                 minWidth="50vw"
             >
-                {props.message}
+                {message}
             </Box>
         );
     }
 
     return (
-        <pre>{filteredLog}</pre>
+        <React.Fragment>
+            {props.streamError && (
+                <Box color="error.main" marginBottom={1}>
+                    {props.message}
+                </Box>
+            )}
+            <pre>{filteredLog}</pre>
+        </React.Fragment>
     );
 }
 
@@ -101,6 +130,7 @@ class TaskLog extends React.Component {
             log: "",
             loaded: false,
             message: DEFAULT_EMPTY_MESSAGE,
+            streamError: false,
             url: "/api/v1/tasks/" + props.task.id + "/log",
         };
 
@@ -109,6 +139,7 @@ class TaskLog extends React.Component {
         this.following = true;
         this.controller = null;
         this.retryTimer = null;
+        this.retryDeadline = 0;
         this.flushTimer = null;
     }
 
@@ -177,7 +208,8 @@ class TaskLog extends React.Component {
 
         this.stopFetching();
         this.following = true;
-        this.setState({ log: "", loaded: false, message: DEFAULT_EMPTY_MESSAGE });
+        this.retryDeadline = Date.now() + MAX_RETRY_MS;
+        this.setState({ log: "", loaded: false, message: DEFAULT_EMPTY_MESSAGE, streamError: false });
 
         const follow = !isTerminalStatus(task.Status);
         this.streamLog(follow ? url + "?follow=1" : url, task);
@@ -186,11 +218,12 @@ class TaskLog extends React.Component {
     // Marks the stream as finished (successfully empty, or failed in a way
     // that will not be retried), so the dialog can stop showing the spinner.
     // Ignores a stream this component has already moved on from.
-    finish(controller, message) {
+    finish(controller, message, isError = false) {
         if (this.controller === controller) {
             this.setState((prevState) => ({
                 loaded: true,
                 message: message === undefined ? prevState.message : message,
+                streamError: isError,
             }));
         }
     }
@@ -203,9 +236,12 @@ class TaskLog extends React.Component {
             .then((response) => {
                 if (response.status === 404) {
                     // The task may not have written anything yet. Keep asking
-                    // while it is still running; a terminal task is never
-                    // going to write one, so stop and show the empty state.
-                    if (!isTerminalStatus(this.state.task.Status)) {
+                    // while it is still running and within the retry budget;
+                    // a terminal task is never going to write one, and a
+                    // non-terminal task stuck past the deadline (e.g. its row
+                    // was deleted, so it will never report a terminal status
+                    // again) still has to stop asking eventually.
+                    if (!isTerminalStatus(this.state.task.Status) && Date.now() < this.retryDeadline) {
                         this.retryTimer = setTimeout(() => {
                             this.retryTimer = null;
                             if (this.controller === controller) {
@@ -222,7 +258,7 @@ class TaskLog extends React.Component {
                 if (!response.ok) {
                     // An upstream failure (e.g. a 5xx from logstash). Don't
                     // stream the error body through the log view.
-                    this.finish(controller, "Error loading log.");
+                    this.finish(controller, ERROR_MESSAGE, true);
                     return;
                 }
 
@@ -231,7 +267,7 @@ class TaskLog extends React.Component {
             .catch((reason) => {
                 if (reason.name !== "AbortError") {
                     console.log(reason);
-                    this.finish(controller, "Error loading log.");
+                    this.finish(controller, ERROR_MESSAGE, true);
                 }
             });
     }
@@ -317,8 +353,8 @@ class TaskLog extends React.Component {
     }
 
     render() {
-        const following = !isTerminalStatus(this.state.task.Status);
-        const popoutUrl = following ? this.state.url + "?follow=1" : this.state.url;
+        const taskTerminal = isTerminalStatus(this.state.task.Status);
+        const popoutUrl = taskTerminal ? this.state.url : this.state.url + "?follow=1";
 
         return (
             <Dialog
@@ -378,7 +414,7 @@ class TaskLog extends React.Component {
                         id="scroll-dialog-description"
                         tabIndex={-1}
                     >
-                        <Log value={this.state.log} filters={this.state.filters} loaded={this.state.loaded} message={this.state.message} />
+                        <Log value={this.state.log} filters={this.state.filters} loaded={this.state.loaded} message={this.state.message} streamError={this.state.streamError} taskTerminal={taskTerminal} />
                     </DialogContentText>
                 </DialogContent>
             </Dialog>

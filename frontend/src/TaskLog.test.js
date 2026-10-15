@@ -65,6 +65,22 @@ function notFoundResponse() {
     return Promise.resolve({ ok: false, status: 404 });
 }
 
+// A reader whose first read() resolves with real data, and whose second
+// read() rejects - standing in for a connection dropping partway through an
+// otherwise-working stream.
+function readThenFailReader(firstChunk) {
+    let calls = 0;
+    return {
+        read: jest.fn(() => {
+            calls += 1;
+            if (calls === 1) {
+                return Promise.resolve({ done: false, value: firstChunk });
+            }
+            return Promise.reject(new Error('stream dropped'));
+        }),
+    };
+}
+
 // A non-ok, non-404 response (e.g. a 500 from logstash). `body` is a getter
 // so the test can prove the handler never even tried to read it - item 2's
 // finding is specifically that the error body must not be streamed into the
@@ -270,6 +286,74 @@ test('a line split across two chunks renders once joined, never as a bare partia
     lines = document.querySelector('pre').textContent.split('\n');
     expect(lines).toContain('bc');
     expect(lines).not.toContain('b');
+});
+
+test('a non-terminal task whose stream ends empty says it is waiting, not that it produced nothing', async () => {
+    const reader = pendingReader();
+    global.fetch = jest.fn(() => okResponse(reader));
+    const task = { id: 'run-7', Status: 'Running' };
+
+    const { rerender } = render(<TaskLog open={false} task={task} onClose={() => {}} />);
+    rerender(<TaskLog open={true} task={task} onClose={() => {}} />);
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+
+    // The stream ends cleanly with zero bytes while the task is still
+    // running - a dropped connection, not a 404. Reconnecting is out of
+    // scope; the only fix here is not to claim the task produced nothing.
+    await act(async () => {
+        reader.resolveFirst({ done: true, value: undefined });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(screen.getByText('Waiting for output…')).toBeInTheDocument();
+    expect(screen.queryByText('No log output.')).not.toBeInTheDocument();
+});
+
+test('a stream that fails after content has arrived keeps the content and shows an error banner', async () => {
+    const reader = readThenFailReader(new TextEncoder().encode('line one\n'));
+    global.fetch = jest.fn(() => okResponse(reader));
+    const task = { id: 'run-8', Status: 'Running' };
+
+    const { rerender } = render(<TaskLog open={false} task={task} onClose={() => {}} />);
+    rerender(<TaskLog open={true} task={task} onClose={() => {}} />);
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    await screen.findByText('Error loading log.');
+
+    // The error must be a banner alongside the content, not a replacement
+    // for it - the lines already received are still worth having on screen.
+    expect(document.querySelector('pre').textContent).toContain('line one');
+});
+
+test('the 404 retry gives up once its budget elapses, even though the task never turns terminal', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(0);
+
+    global.fetch = jest.fn(() => notFoundResponse());
+    // Stands in for App.js's scenario: the task was deleted and dropped from
+    // the row list, so TaskLog is stuck looking at a stale non-terminal
+    // snapshot that will never update to a terminal status on its own.
+    const task = { id: 'run-9', Status: 'Running' };
+
+    const { rerender } = render(<TaskLog open={false} task={task} onClose={() => {}} />);
+    rerender(<TaskLog open={true} task={task} onClose={() => {}} />);
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2), { timeout: 3000 });
+
+    // Jump straight to just past the 5-minute retry budget fetchLog set when
+    // the stream started, then let the already-scheduled retry's 404
+    // handler see that the deadline has passed.
+    jest.setSystemTime(6 * 60 * 1000);
+    act(() => { jest.advanceTimersByTime(2000); });
+
+    await screen.findByText('Waiting for output…');
+
+    // No further retry once the budget is exhausted.
+    const callsAtBudget = fetch.mock.calls.length;
+    act(() => { jest.advanceTimersByTime(10000); });
+    expect(fetch.mock.calls.length).toBe(callsAtBudget);
 });
 
 test('a non-ok, non-404 response shows the error state and never reads the body', async () => {
