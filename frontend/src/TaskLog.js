@@ -22,6 +22,14 @@ import { isScrolledToBottom } from './scroll';
 // task can be running before its first line is written.
 const RETRY_DELAY_MS = 2000;
 
+// How often to flush buffered stream chunks into state. logstash flushes per
+// line and the proxy flushes per read, so a chatty stream can otherwise
+// deliver one chunk per log line - one render each - to a component that
+// cannot batch across awaited reads. Batching on a short timer keeps the
+// render count sane for a long log while staying well inside the "within
+// roughly a second" latency budget.
+const FLUSH_INTERVAL_MS = 150;
+
 // Shown when a stream has finished (or failed for good) and there is still
 // nothing to display. Overridden with a specific error message when the
 // cause was a failure rather than a genuinely empty log.
@@ -30,6 +38,24 @@ const DEFAULT_EMPTY_MESSAGE = "No log output.";
 
 function Log(props) {
     const log = props.value;
+    const filters = props.filters;
+
+    // Recomputed only when the log content or the active filters actually
+    // change, so a re-render triggered by something else (e.g. the dialog's
+    // own chrome) does not re-run split/filter/join over a string that can
+    // grow toward a megabyte.
+    const filteredLog = React.useMemo(() => {
+        if (log === "") {
+            return log;
+        }
+
+        let logLines = log.split("\n");
+        logLines = logLines.filter((line) => {
+            return filters.includes(line.slice(28, 35).trim()) || (line[27] !== "[" && filters.includes("STDOUT"));
+        });
+
+        return logLines.join("\n");
+    }, [log, filters]);
 
     if (log === "") {
         if (!props.loaded) {
@@ -59,13 +85,8 @@ function Log(props) {
         );
     }
 
-    let logLines = log.split("\n");
-    logLines = logLines.filter((line) => {
-        return props.filters.includes(line.slice(28, 35).trim()) || (line[27] !== "[" && props.filters.includes("STDOUT"));
-    });
-
     return (
-        <pre >{logLines.join("\n")}</pre>
+        <pre>{filteredLog}</pre>
     );
 }
 
@@ -88,6 +109,7 @@ class TaskLog extends React.Component {
         this.following = true;
         this.controller = null;
         this.retryTimer = null;
+        this.flushTimer = null;
     }
 
     componentWillReceiveProps(newProps) {
@@ -131,6 +153,10 @@ class TaskLog extends React.Component {
         if (this.retryTimer) {
             clearTimeout(this.retryTimer);
             this.retryTimer = null;
+        }
+        if (this.flushTimer) {
+            clearTimeout(this.flushTimer);
+            this.flushTimer = null;
         }
     }
 
@@ -214,10 +240,37 @@ class TaskLog extends React.Component {
         const reader = response.body.getReader();
         const decoder = createLogDecoder();
 
-        const append = (text) => {
+        // Buffered per-stream (not on `this`), so a chunk arriving for a
+        // stream this component has already moved on from can never bleed
+        // into the next stream's buffer: append() below refuses to touch it
+        // once `this.controller` no longer matches.
+        let pending = "";
+
+        const flush = () => {
             // Ignore a stream this component has already moved on from.
+            if (pending === "" || this.controller !== controller) {
+                pending = "";
+                return;
+            }
+            const text = pending;
+            pending = "";
+            this.setState((prevState) => ({ log: prevState.log + text }));
+        };
+
+        const scheduleFlush = () => {
+            if (this.flushTimer) {
+                return;
+            }
+            this.flushTimer = setTimeout(() => {
+                this.flushTimer = null;
+                flush();
+            }, FLUSH_INTERVAL_MS);
+        };
+
+        const append = (text) => {
             if (text !== "" && this.controller === controller) {
-                this.setState((prevState) => ({ log: prevState.log + text }));
+                pending += text;
+                scheduleFlush();
             }
         };
 
@@ -225,6 +278,14 @@ class TaskLog extends React.Component {
             return reader.read().then(({ done, value }) => {
                 if (done) {
                     append(decoder.flush());
+                    // Flush immediately rather than waiting for the timer:
+                    // the stream just ended, so there is nothing left to
+                    // batch with, and the last lines must still render.
+                    if (this.flushTimer) {
+                        clearTimeout(this.flushTimer);
+                        this.flushTimer = null;
+                    }
+                    flush();
                     this.finish(controller);
                     return;
                 }
@@ -234,7 +295,21 @@ class TaskLog extends React.Component {
             });
         };
 
-        return pump();
+        return pump().catch((reason) => {
+            // A read failure partway through the stream (e.g. a dropped
+            // connection, or the fetch being aborted). Flush whatever was
+            // already buffered before the rejection reaches streamLog's
+            // handler below, so lines already received are not silently
+            // discarded along with the failure that ended the stream. flush()
+            // itself still drops stale content for a stream this component
+            // has already moved on from, via the controller check above.
+            if (this.flushTimer) {
+                clearTimeout(this.flushTimer);
+                this.flushTimer = null;
+            }
+            flush();
+            throw reason;
+        });
     }
 
     setFilters(filters) {
