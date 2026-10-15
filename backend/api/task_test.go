@@ -116,6 +116,31 @@ func TestGetTaskLogWithoutFollowDoesNotForwardIt(t *testing.T) {
 	}
 }
 
+// A task's log URL is set at creation, before the first line is written, so
+// logstash 404s until there is something to read. Task 7's dialog retries on
+// that 404 while the task is still running; if the dashboard masked it with a
+// 200, the retry would never fire and the browser would render logstash's
+// error body as if it were log lines.
+func TestGetTaskLogForwardsUpstreamStatusCode(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte("not found\n"))
+	}))
+	defer upstream.Close()
+
+	server, path := newTestTaskServer(t, upstream.URL+"/logs/x")
+
+	response, err := http.Get(server.URL + path + "?follow=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("status code = %d, want %d", response.StatusCode, http.StatusNotFound)
+	}
+}
+
 func TestGetTaskLogDeliversBytesBeforeUpstreamFinishes(t *testing.T) {
 	release := make(chan struct{})
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -173,12 +198,15 @@ func TestGetTaskLogForwardsLinesLongerThanTheBuffer(t *testing.T) {
 	}
 	defer response.Body.Close()
 
-	line, err := bufio.NewReaderSize(response.Body, 64).ReadString('\n')
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(line) != len(long)+1 {
-		t.Fatalf("line length = %d, want %d", len(line), len(long)+1)
+	reader := bufio.NewReaderSize(response.Body, 64)
+
+	select {
+	case line := <-readLineAsync(reader):
+		if len(line) != len(long)+1 {
+			t.Fatalf("line length = %d, want %d", len(line), len(long)+1)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the long line never arrived")
 	}
 }
 

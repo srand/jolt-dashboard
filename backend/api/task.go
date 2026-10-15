@@ -3,7 +3,9 @@ package api
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -147,7 +149,10 @@ func (api *TaskApi) GetTaskLog(c echo.Context) error {
 	// A buffering reverse proxy is the one deployment where chunked streaming
 	// stalls; this asks nginx not to.
 	c.Response().Header().Set("X-Accel-Buffering", "no")
-	c.Response().WriteHeader(http.StatusOK)
+	// Forward the upstream status rather than assuming 200: a log that has not
+	// been written yet 404s, and the dashboard's browser-side retry depends on
+	// seeing that 404 rather than a masked 200.
+	c.Response().WriteHeader(response.StatusCode)
 
 	// Copy by hand rather than with c.Stream: io.Copy leaves the bytes in
 	// net/http's buffer, which defeats the point of streaming.
@@ -161,6 +166,14 @@ func (api *TaskApi) GetTaskLog(c echo.Context) error {
 			c.Response().Flush()
 		}
 		if readErr != nil {
+			// A client going away cancels the upstream read via the request
+			// context, and a clean end of log looks like io.EOF; neither is
+			// worth logging. A genuine upstream failure is.
+			if !errors.Is(readErr, io.EOF) &&
+				!errors.Is(readErr, context.Canceled) &&
+				!errors.Is(readErr, context.DeadlineExceeded) {
+				fmt.Printf("task %s: log stream read failed: %v\n", uuid, readErr)
+			}
 			return nil
 		}
 	}
