@@ -881,12 +881,21 @@ In `services/pkg/logstash/log.proto`, inside `ReadLogRequest`, after the `before
 
 - [ ] **Step 2: Regenerate the Go stubs**
 
+The generators live in the repo's nix shell: `protoc-gen-go-grpc` is not on the
+system PATH, so the script must run inside it.
+
 ```bash
-cd /home/rbrt/git/jolt && ./services/pkg/protocol/generate.sh
+cd /home/rbrt/git/jolt && nix-shell shell.nix --run './services/pkg/protocol/generate.sh'
 git -C /home/rbrt/git/jolt diff --stat services/pkg/protocol/
 ```
 
-Expected: `services/pkg/protocol/log.pb.go` changes and nothing else does. The script needs `protoc` plus `protoc-gen-go@v1.34.1` and `protoc-gen-go-grpc@v1.3.0` on PATH; it documents this in its header. If `protoc` is missing, stop and tell your human partner rather than hand-editing the generated file.
+Expected: `services/pkg/protocol/log.pb.go` changes and nothing else does.
+
+`shell.nix` pins nixpkgs 24.05, whose plugin versions may not match the ones
+recorded in the generated headers (`protoc-gen-go@v1.34.1`,
+`protoc-gen-go-grpc@v1.3.0`). If the diff touches other files in
+`services/pkg/protocol/`, or rewrites version headers, stop and report it
+rather than committing the churn — and never hand-edit a generated file.
 
 - [ ] **Step 3: Write the failing test**
 
