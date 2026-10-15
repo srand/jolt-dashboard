@@ -294,8 +294,9 @@ which waits for the whole body. It becomes an incremental consumer:
   writer closes; both paths must leave the dialog in the same state.
 - Abort on close via `AbortController`, and on reload, and on the task
   changing. Reload re-opens the stream from the start.
-- Keep the view pinned to the bottom while new lines arrive, unless the user
-  has scrolled up.
+- Scroll to the bottom when the dialog opens, and keep the view pinned there
+  as new lines arrive. If the user scrolls up, leave their position alone
+  until they scroll back to the bottom, then resume following.
 
 The initial spinner condition is `log === ""` (`frontend/src/TaskLog.js:22`),
 which still holds: it clears as soon as the first chunk arrives.
