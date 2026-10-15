@@ -122,14 +122,46 @@ func (api *TaskApi) GetTaskLog(c echo.Context) error {
 		},
 	}
 
+	url := task.Log
+	if c.QueryParam("follow") == "1" {
+		// Ask logstash to hold the response open while the task is writing.
+		url += "?follow=1"
+	}
+
+	// The request context ties the upstream connection to this client. Without
+	// it, a closed dialog would leave the upstream read running for the rest of
+	// the task.
+	request, err := http.NewRequestWithContext(c.Request().Context(), http.MethodGet, url, nil)
+	if err != nil {
+		return c.String(http.StatusBadRequest, err.Error())
+	}
+
 	client := &http.Client{Transport: transport}
-	response, err := client.Get(task.Log)
+	response, err := client.Do(request)
 	if err != nil {
 		return c.String(http.StatusBadGateway, err.Error())
 	}
+	defer response.Body.Close()
 
-	reader := response.Body
-	contentType := response.Header.Get("Content-Type")
+	c.Response().Header().Set(echo.HeaderContentType, response.Header.Get("Content-Type"))
+	// A buffering reverse proxy is the one deployment where chunked streaming
+	// stalls; this asks nginx not to.
+	c.Response().Header().Set("X-Accel-Buffering", "no")
+	c.Response().WriteHeader(http.StatusOK)
 
-	return c.Stream(http.StatusOK, contentType, reader)
+	// Copy by hand rather than with c.Stream: io.Copy leaves the bytes in
+	// net/http's buffer, which defeats the point of streaming.
+	buf := make([]byte, 4096)
+	for {
+		n, readErr := response.Body.Read(buf)
+		if n > 0 {
+			if _, err := c.Response().Write(buf[:n]); err != nil {
+				return nil
+			}
+			c.Response().Flush()
+		}
+		if readErr != nil {
+			return nil
+		}
+	}
 }
