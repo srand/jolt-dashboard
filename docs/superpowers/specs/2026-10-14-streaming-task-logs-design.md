@@ -229,7 +229,10 @@ uses chunked transfer encoding.
 ```go
 c.Response().Header().Set(echo.HeaderContentType, contentType)
 c.Response().Header().Set("X-Accel-Buffering", "no")
-c.Response().WriteHeader(http.StatusOK)
+// Forward the upstream status rather than assuming 200. The "log not yet
+// created" case below depends on logstash's 404 reaching the browser, and
+// masking it would also render an upstream error body as log content.
+c.Response().WriteHeader(response.StatusCode)
 
 buf := make([]byte, 4096)
 for {
@@ -287,11 +290,14 @@ which waits for the whole body. It becomes an incremental consumer:
   half-delivered line must not reach `Log`.
 - Follow only when the task's status is one of `Queued`, `Assigned` or
   `Running`; treat `Passed`, `Failed`, `Cancelled` and `Deleted` as terminal
-  and fetch without `follow`. `TaskLog` is handed a
-  task snapshot today, so `Tasks.js` passes the live row instead — the tasks
-  websocket already streams status changes — and the dialog stops following
-  when the status becomes terminal. The stream also ends on its own when the
-  writer closes; both paths must leave the dialog in the same state.
+  and fetch without `follow`. `TaskLog` is handed a task snapshot today, so
+  `Tasks.js` passes the live row instead — the tasks websocket already streams
+  status changes — which is what the retry and the popout link read.
+  A status that turns terminal mid-stream must **not** abort the stream: the
+  scheduler writes a task's error details through a second, short-lived writer
+  *after* it reports completion, so cutting the stream on the status change
+  would truncate exactly those lines and violate the "no truncated tail"
+  criterion above. Let the stream end on its own when the last writer closes.
 - Abort on close via `AbortController`, and on reload, and on the task
   changing. Reload re-opens the stream from the start.
 - Scroll to the bottom when the dialog opens, and keep the view pinned there
