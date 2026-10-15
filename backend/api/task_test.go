@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -84,6 +85,44 @@ func TestGetTaskLogForwardsFollowUpstream(t *testing.T) {
 	case query := <-queries:
 		if query != "follow=1" {
 			t.Fatalf("upstream query = %q, want follow=1", query)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("upstream was never called")
+	}
+}
+
+// The producer only ever formats task.Log as "%s/logs/%s" today, so this is
+// not reachable yet - but if a logstash URI ever carried its own query
+// parameter, blind string concatenation would silently build a malformed
+// upstream URL (two "?"s, or dropping the existing parameter). Parsing the
+// URL and merging into RawQuery must preserve both.
+func TestGetTaskLogMergesFollowIntoExistingQueryString(t *testing.T) {
+	queries := make(chan string, 4)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		queries <- r.URL.RawQuery
+		w.Write([]byte("line\n"))
+	}))
+	defer upstream.Close()
+
+	server, path := newTestTaskServer(t, upstream.URL+"/logs/x?token=abc")
+
+	response, err := http.Get(server.URL + path + "?follow=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+
+	select {
+	case query := <-queries:
+		values, err := url.ParseQuery(query)
+		if err != nil {
+			t.Fatalf("upstream query %q did not parse: %v", query, err)
+		}
+		if values.Get("token") != "abc" {
+			t.Fatalf("upstream query = %q, want token=abc preserved", query)
+		}
+		if values.Get("follow") != "1" {
+			t.Fatalf("upstream query = %q, want follow=1 merged in", query)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("upstream was never called")

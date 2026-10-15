@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,6 +15,18 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/srand/jolt-dashboard/model"
 )
+
+// Shared across requests: a Transport pools and reuses connections, so
+// creating a new one per request (as this handler used to) parks an idle
+// connection and its readLoop goroutine per log view for the life of the
+// process. InsecureSkipVerify is deliberate; see the design doc.
+var logProxyClient = &http.Client{
+	Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+		},
+	},
+}
 
 type TaskApi struct {
 	service *model.TaskService
@@ -118,28 +131,32 @@ func (api *TaskApi) GetTaskLog(c echo.Context) error {
 		return c.String(http.StatusNotFound, "not found")
 	}
 
-	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true,
-		},
-	}
-
-	url := task.Log
+	logUrl := task.Log
 	if c.QueryParam("follow") == "1" {
 		// Ask logstash to hold the response open while the task is writing.
-		url += "?follow=1"
+		// Parsed rather than appended blindly: the producer never puts a
+		// query string on task.Log today, but string concatenation would
+		// silently build a malformed URL (a second "?", or dropping an
+		// existing parameter) the day that stops being true.
+		parsed, err := url.Parse(logUrl)
+		if err != nil {
+			return c.String(http.StatusBadGateway, err.Error())
+		}
+		query := parsed.Query()
+		query.Set("follow", "1")
+		parsed.RawQuery = query.Encode()
+		logUrl = parsed.String()
 	}
 
 	// The request context ties the upstream connection to this client. Without
 	// it, a closed dialog would leave the upstream read running for the rest of
 	// the task.
-	request, err := http.NewRequestWithContext(c.Request().Context(), http.MethodGet, url, nil)
+	request, err := http.NewRequestWithContext(c.Request().Context(), http.MethodGet, logUrl, nil)
 	if err != nil {
 		return c.String(http.StatusBadRequest, err.Error())
 	}
 
-	client := &http.Client{Transport: transport}
-	response, err := client.Do(request)
+	response, err := logProxyClient.Do(request)
 	if err != nil {
 		return c.String(http.StatusBadGateway, err.Error())
 	}
