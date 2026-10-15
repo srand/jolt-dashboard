@@ -86,6 +86,7 @@ class Tasks extends React.Component {
       filters: ["Queued", "Assigned", "Running", "Passed", "Failed", "Cancelled"],
       logOpen: false,
       logTask: { "Log": "", "Name": "" },
+      logTaskId: null,
     };
   }
 
@@ -100,7 +101,7 @@ class Tasks extends React.Component {
   }
 
   onLogClick(task) {
-    this.setState({ logOpen: true, logTask: task });
+    this.setState({ logOpen: true, logTaskId: task.id, logTask: task });
   }
 
   onLogClose() {
@@ -113,7 +114,7 @@ class Tasks extends React.Component {
         <TaskLog
           open={this.state.logOpen}
           onClose={() => { this.onLogClose(); }}
-          task={this.state.logTask}
+          task={this.state.rows.find((row) => row.id === this.state.logTaskId) || this.state.logTask}
         />
 
         <Box display="flex" alignItems="center">
