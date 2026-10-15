@@ -22,11 +22,30 @@ import { isScrolledToBottom } from './scroll';
 // task can be running before its first line is written.
 const RETRY_DELAY_MS = 2000;
 
+// Shown when a stream has finished (or failed for good) and there is still
+// nothing to display. Overridden with a specific error message when the
+// cause was a failure rather than a genuinely empty log.
+const DEFAULT_EMPTY_MESSAGE = "No log output.";
+
 
 function Log(props) {
     const log = props.value;
 
     if (log === "") {
+        if (!props.loaded) {
+            return (
+                <Box
+                    display="flex"
+                    justifyContent="center"
+                    alignItems="center"
+                    minHeight="50vh"
+                    minWidth="50vw"
+                >
+                    <CircularProgress flexGrow={1} />
+                </Box>
+            );
+        }
+
         return (
             <Box
                 display="flex"
@@ -35,7 +54,7 @@ function Log(props) {
                 minHeight="50vh"
                 minWidth="50vw"
             >
-                <CircularProgress flexGrow={1} />
+                {props.message}
             </Box>
         );
     }
@@ -59,6 +78,8 @@ class TaskLog extends React.Component {
             open: props.open,
             task: props.task,
             log: "",
+            loaded: false,
+            message: DEFAULT_EMPTY_MESSAGE,
             url: "/api/v1/tasks/" + props.task.id + "/log",
         };
 
@@ -70,7 +91,14 @@ class TaskLog extends React.Component {
     }
 
     componentWillReceiveProps(newProps) {
-        if (!this.state.open && newProps.open) {
+        // Either the dialog is opening, or it was already open and is now
+        // showing a different task (e.g. the row behind it swapped out from
+        // under an open dialog). Both need a fresh stream against the new
+        // task's URL.
+        const opening = !this.state.open && newProps.open;
+        const switchingTask = this.state.open && newProps.open && newProps.task.id !== this.state.task.id;
+
+        if (opening || switchingTask) {
             var url = "/api/v1/tasks/" + newProps.task.id + "/log";
             this.setState({
                 open: newProps.open,
@@ -123,10 +151,22 @@ class TaskLog extends React.Component {
 
         this.stopFetching();
         this.following = true;
-        this.setState({ log: "" });
+        this.setState({ log: "", loaded: false, message: DEFAULT_EMPTY_MESSAGE });
 
         const follow = !isTerminalStatus(task.Status);
         this.streamLog(follow ? url + "?follow=1" : url, task);
+    }
+
+    // Marks the stream as finished (successfully empty, or failed in a way
+    // that will not be retried), so the dialog can stop showing the spinner.
+    // Ignores a stream this component has already moved on from.
+    finish(controller, message) {
+        if (this.controller === controller) {
+            this.setState((prevState) => ({
+                loaded: true,
+                message: message === undefined ? prevState.message : message,
+            }));
+        }
     }
 
     streamLog(url, task) {
@@ -137,7 +177,8 @@ class TaskLog extends React.Component {
             .then((response) => {
                 if (response.status === 404) {
                     // The task may not have written anything yet. Keep asking
-                    // while it is still running.
+                    // while it is still running; a terminal task is never
+                    // going to write one, so stop and show the empty state.
                     if (!isTerminalStatus(this.state.task.Status)) {
                         this.retryTimer = setTimeout(() => {
                             this.retryTimer = null;
@@ -145,7 +186,17 @@ class TaskLog extends React.Component {
                                 this.streamLog(url, task);
                             }
                         }, RETRY_DELAY_MS);
+                        return;
                     }
+
+                    this.finish(controller);
+                    return;
+                }
+
+                if (!response.ok) {
+                    // An upstream failure (e.g. a 5xx from logstash). Don't
+                    // stream the error body through the log view.
+                    this.finish(controller, "Error loading log.");
                     return;
                 }
 
@@ -154,6 +205,7 @@ class TaskLog extends React.Component {
             .catch((reason) => {
                 if (reason.name !== "AbortError") {
                     console.log(reason);
+                    this.finish(controller, "Error loading log.");
                 }
             });
     }
@@ -173,6 +225,7 @@ class TaskLog extends React.Component {
             return reader.read().then(({ done, value }) => {
                 if (done) {
                     append(decoder.flush());
+                    this.finish(controller);
                     return;
                 }
 
@@ -250,7 +303,7 @@ class TaskLog extends React.Component {
                         id="scroll-dialog-description"
                         tabIndex={-1}
                     >
-                        <Log value={this.state.log} filters={this.state.filters} />
+                        <Log value={this.state.log} filters={this.state.filters} loaded={this.state.loaded} message={this.state.message} />
                     </DialogContentText>
                 </DialogContent>
             </Dialog>
