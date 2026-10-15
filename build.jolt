@@ -28,11 +28,45 @@ class Backend(golang.Executable):
             super().run(deps, tools)
 
 
+# Not a golang.Executable: nothing is built or published, the toolchain is
+# all that is needed. GOCACHE lives in an incremental build directory so Go's
+# own test and build cache survives between runs, like Executable does.
+@git.influence("backend")
+class BackendTest(Task):
+    name = "test/backend"
+    requires = ["golang"]
+
+    def run(self, deps, tools):
+        self.cachedir = tools.builddir("cache", incremental=True)
+        with tools.cwd("backend"), tools.environ(GOCACHE=self.cachedir):
+            tools.run("go test ./...")
+
+
 @git.influence("frontend")
 class Frontend(nodejs.RunBuildScript):
     def run(self, deps, tools):
         with tools.cwd("frontend"):
             super().run(deps, tools)
+
+
+# RunScript only runs the script, so the dependencies have to be installed
+# here - RunBuildScript is the one that does it, and that one builds instead
+# of testing. CI and --watchAll stop react-scripts from watching forever.
+@git.influence("frontend")
+class FrontendTest(nodejs.RunScript):
+    name = "test/frontend"
+    script = "test"
+    flags = ["--watchAll=false"]
+
+    def run(self, deps, tools):
+        with tools.cwd("frontend"), tools.environ(CI="true"):
+            tools.run("npm ci --legacy-peer-deps")
+            super().run(deps, tools)
+
+
+class Test(Alias):
+    name = "test"
+    requires = ["test/backend", "test/frontend"]
 
 
 class Run(Task):
@@ -54,7 +88,7 @@ class Image(docker.DockerImage):
     name = "image"
     dockerfile = "docker/Dockerfile"
     push = BooleanParameter(False)
-    requires = ["docker/cli", "backend", "frontend"]
+    requires = ["docker/cli", "backend", "frontend", "test/backend", "test/frontend"]
     requires_push_true = ["docker/login"]
     tags = ["robrt/jolt-dashboard:latest", "robrt/jolt-dashboard:{version}"]
     version = Parameter(_version)
