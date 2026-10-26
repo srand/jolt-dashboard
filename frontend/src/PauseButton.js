@@ -7,13 +7,13 @@ import ToggleButton from '@mui/material/ToggleButton';
 const PauseButton = ({ color, selected, onPlay, onPause }) => {
     if (!selected) {
         return (
-            <ToggleButton color={color} selected={false} onClick={onPlay}>
+            <ToggleButton color={color} value="play" selected={false} onClick={onPlay}>
                 <PlayIcon />
             </ToggleButton>
         );
     }
     return (
-        <ToggleButton color={color} selected={true} onClick={onPause}>
+        <ToggleButton color={color} value="pause" selected={true} onClick={onPause}>
             <PauseIcon />
         </ToggleButton>
     );

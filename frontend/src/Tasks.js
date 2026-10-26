@@ -14,7 +14,6 @@ import TaskLog from "./TaskLog"
 class Tasks extends React.Component {
   constructor(props) {
     super(props);
-    let value = props.value;
     this.state = {
       columns: [
         { field: 'RoutingKey', headerName: 'Labels', flex: 1 },
@@ -81,8 +80,6 @@ class Tasks extends React.Component {
           }
         },
       ],
-      rows: value,
-      filteredRows: value,
       filters: ["Queued", "Assigned", "Running", "Passed", "Failed", "Cancelled"],
       logOpen: false,
       logTask: { "Log": "", "Name": "" },
@@ -90,14 +87,8 @@ class Tasks extends React.Component {
     };
   }
 
-  componentWillReceiveProps(newProps) {
-    var filtered = [...newProps.value].filter((task) => { return this.state.filters.includes(task.Status); })
-    this.setState({ rows: newProps.value, filteredRows: filtered })
-  }
-
   setFilters(filters) {
-    var filtered = [...this.state.rows].filter((task) => { return filters.includes(task.Status); })
-    this.setState({ filters: filters, filteredRows: filtered });
+    this.setState({ filters: filters });
   }
 
   onLogClick(task) {
@@ -109,12 +100,14 @@ class Tasks extends React.Component {
   }
 
   render() {
+    const filteredRows = this.props.value.filter((task) => { return this.state.filters.includes(task.Status); });
+
     return (
       <div className="w3-container w3-cell-row w3-margin-top">
         <TaskLog
           open={this.state.logOpen}
           onClose={() => { this.onLogClose(); }}
-          task={this.state.rows.find((row) => row.id === this.state.logTaskId) || this.state.logTask}
+          task={this.props.value.find((row) => row.id === this.state.logTaskId) || this.state.logTask}
         />
 
         <Box display="flex" alignItems="center">
@@ -144,7 +137,7 @@ class Tasks extends React.Component {
             },
           }}
           rowHeight={40}
-          rows={this.state.filteredRows}
+          rows={filteredRows}
           so
         />
       </div>

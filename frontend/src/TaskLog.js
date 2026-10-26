@@ -38,6 +38,10 @@ const MAX_RETRY_MS = 5 * 60 * 1000;
 // roughly a second" latency budget.
 const FLUSH_INTERVAL_MS = 150;
 
+function logUrl(task) {
+    return "/api/v1/tasks/" + task.id + "/log";
+}
+
 // Shown when a stream has finished (or failed for good) and there is still
 // nothing to display. Overridden with a specific error message when the
 // cause was a failure rather than a genuinely empty log.
@@ -83,7 +87,7 @@ function Log(props) {
                     minHeight="50vh"
                     minWidth="50vw"
                 >
-                    <CircularProgress flexGrow={1} />
+                    <CircularProgress />
                 </Box>
             );
         }
@@ -125,13 +129,10 @@ class TaskLog extends React.Component {
         super(props);
         this.state = {
             filters: ["INFO", "ERROR", "STDOUT", "STDERR"],
-            open: props.open,
-            task: props.task,
             log: "",
             loaded: false,
             message: DEFAULT_EMPTY_MESSAGE,
             streamError: false,
-            url: "/api/v1/tasks/" + props.task.id + "/log",
         };
 
         this.scrollRef = React.createRef();
@@ -143,36 +144,24 @@ class TaskLog extends React.Component {
         this.flushTimer = null;
     }
 
-    componentWillReceiveProps(newProps) {
-        // Either the dialog is opening, or it was already open and is now
-        // showing a different task (e.g. the row behind it swapped out from
-        // under an open dialog). Both need a fresh stream against the new
-        // task's URL.
-        const opening = !this.state.open && newProps.open;
-        const switchingTask = this.state.open && newProps.open && newProps.task.id !== this.state.task.id;
-
-        if (opening || switchingTask) {
-            var url = "/api/v1/tasks/" + newProps.task.id + "/log";
-            this.setState({
-                open: newProps.open,
-                task: newProps.task,
-                url: url,
-            });
-            this.fetchLog(url, newProps.task);
-        } else {
-            this.setState({ open: newProps.open, task: newProps.task });
-
-            if (this.state.open && !newProps.open) {
-                this.stopFetching();
-            }
-        }
-    }
-
     componentWillUnmount() {
         this.stopFetching();
     }
 
-    componentDidUpdate() {
+    componentDidUpdate(prevProps) {
+        // Either the dialog is opening, or it was already open and is now
+        // showing a different task (e.g. the row behind it swapped out from
+        // under an open dialog). Both need a fresh stream against the new
+        // task's URL.
+        const opening = !prevProps.open && this.props.open;
+        const switchingTask = prevProps.open && this.props.open && this.props.task.id !== prevProps.task.id;
+
+        if (opening || switchingTask) {
+            this.fetchLog(logUrl(this.props.task), this.props.task);
+        } else if (prevProps.open && !this.props.open) {
+            this.stopFetching();
+        }
+
         this.scrollToBottomIfFollowing();
     }
 
@@ -241,7 +230,7 @@ class TaskLog extends React.Component {
                     // non-terminal task stuck past the deadline (e.g. its row
                     // was deleted, so it will never report a terminal status
                     // again) still has to stop asking eventually.
-                    if (!isTerminalStatus(this.state.task.Status) && Date.now() < this.retryDeadline) {
+                    if (!isTerminalStatus(this.props.task.Status) && Date.now() < this.retryDeadline) {
                         this.retryTimer = setTimeout(() => {
                             this.retryTimer = null;
                             if (this.controller === controller) {
@@ -353,12 +342,13 @@ class TaskLog extends React.Component {
     }
 
     render() {
-        const taskTerminal = isTerminalStatus(this.state.task.Status);
-        const popoutUrl = taskTerminal ? this.state.url : this.state.url + "?follow=1";
+        const taskTerminal = isTerminalStatus(this.props.task.Status);
+        const url = logUrl(this.props.task);
+        const popoutUrl = taskTerminal ? url : url + "?follow=1";
 
         return (
             <Dialog
-                open={this.state.open}
+                open={this.props.open}
                 onClose={() => { this.props.onClose(); }}
                 aria-labelledby="scroll-dialog-title"
                 aria-describedby="scroll-dialog-description"
@@ -367,7 +357,7 @@ class TaskLog extends React.Component {
             >
                 <DialogTitle id="scroll-dialog-title">
                     <Box display="flex" alignItems="center">
-                      <ListItemText primaryTypographyProps={{variant: "h5"}} primary={this.state.task.Name} secondary={this.state.task.Identity}></ListItemText>
+                      <ListItemText primaryTypographyProps={{variant: "h5"}} primary={this.props.task.Name} secondary={this.props.task.Identity}></ListItemText>
                         <Box>
                             <IconButton onClick={() => { this.props.onClose(); }}>
                                 <CloseIcon />
@@ -379,13 +369,13 @@ class TaskLog extends React.Component {
                     <Box flexGrow={1} >
                         <Grid container spacing={2}>
                             <Grid item xs={4}>
-                                <ListItemText primary={this.state.task.Started} secondary="Started"></ListItemText>
+                                <ListItemText primary={this.props.task.Started} secondary="Started"></ListItemText>
                             </Grid>
                             <Grid item xs={4}>
-                                <ListItemText primary={this.state.task.Ended} secondary="Finished"></ListItemText>
+                                <ListItemText primary={this.props.task.Ended} secondary="Finished"></ListItemText>
                             </Grid>
                             <Grid item xs={4}>
-                                <ListItemText primary={this.state.task.Status} secondary="Outcome"></ListItemText>
+                                <ListItemText primary={this.props.task.Status} secondary="Outcome"></ListItemText>
                             </Grid>
                         </Grid>
                     </Box>
@@ -394,7 +384,7 @@ class TaskLog extends React.Component {
                             <PopoutButton color="primary" href={popoutUrl} />
                         </Box>
                         <Box className="w3-margin-right">
-                            <ReloadButton color="primary" onClick={(ev, val) => { this.fetchLog(this.state.url, this.state.task); }} />
+                            <ReloadButton color="primary" onClick={(ev, val) => { this.fetchLog(url, this.props.task); }} />
                         </Box>
                         <Box>
                             <ToggleButtonGroup value={this.state.filters} onChange={(ev, val) => { this.setFilters(val); }}>
@@ -411,6 +401,7 @@ class TaskLog extends React.Component {
                 </Box>
                 <DialogContent dividers={true} ref={this.scrollRef} onScroll={() => { this.onScroll(); }}>
                     <DialogContentText
+                        component="div"
                         id="scroll-dialog-description"
                         tabIndex={-1}
                     >

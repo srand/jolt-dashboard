@@ -91,5 +91,3 @@ computing a metric right after `setState({tasks})` reads the previous task list.
   the module; the *directory* form `@mui/material/colors` resolves to MUI's CJS build and works.
 - `App.test.js` stubs `global.fetch` and `global.WebSocket`, and uses fake timers — which advance
   the clock the metrics read, so advance timers rather than calling `jest.setSystemTime` on top.
-- `TabPanel` renders a `div` inside `Typography`'s `p`, so React logs a DOM-nesting warning in tests.
-  Pre-existing, unrelated to whatever you are changing.
