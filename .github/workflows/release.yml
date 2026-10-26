@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Image version tag (defaults to 3.1.<run number>)
+        required: false
+
+env:
+  DASHBOARD_VERSION: ${{ inputs.version || format('3.1.{0}', github.run_number) }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Jolt
+        run: pip install --upgrade jolt
+
+      # The image task requires the backend and frontend tests, so they run
+      # here too. Setting DASHBOARD_VERSION makes the default task push.
+      - name: Build and publish image
+        env:
+          DOCKER_USER: ${{ secrets.DOCKER_USER }}
+          DOCKER_PASSWD: ${{ secrets.DOCKER_PASSWD }}
+        run: jolt -c jolt.cachedir=${{ github.workspace }}/cache build default
