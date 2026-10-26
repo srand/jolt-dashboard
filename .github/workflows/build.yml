@@ -1,0 +1,23 @@
+name: Build
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Jolt
+        run: pip install --upgrade jolt
+
+      # Builds and tests the image without pushing it. The version parameter
+      # has no default, so the commit is used as the tag.
+      - name: Build image
+        run: jolt -c jolt.cachedir=${{ github.workspace }}/cache build image:version=${{ github.sha }}
