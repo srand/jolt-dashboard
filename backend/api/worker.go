@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/labstack/echo/v4"
 	"github.com/srand/jolt-dashboard/model"
 )
 
@@ -19,21 +18,23 @@ func NewWorkerApi(service *model.WorkerService) *WorkerApi {
 	return &WorkerApi{service: service}
 }
 
-func (api *WorkerApi) GetWorkers(c echo.Context) error {
+func (api *WorkerApi) GetWorkers(w http.ResponseWriter, r *http.Request) {
 	workers, err := api.service.GetWorkers()
 	if err != nil {
-		return c.String(http.StatusInternalServerError, "internal server error")
+		writeString(w, http.StatusInternalServerError, "internal server error")
+		return
 	}
 
-	return c.JSON(http.StatusOK, workers)
+	writeJSON(w, http.StatusOK, workers)
 }
 
-func (api *WorkerApi) GetWorkerEvents(c echo.Context) error {
+func (api *WorkerApi) GetWorkerEvents(w http.ResponseWriter, r *http.Request) {
 	upgrader := websocket.Upgrader{}
-	ws, err := upgrader.Upgrade(c.Response().Writer, c.Request(), nil)
+	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		err = fmt.Errorf("failed to upgrade to websocket: %w", err)
-		return c.String(http.StatusBadRequest, err.Error())
+		// The upgrader has already sent an error response.
+		fmt.Printf("failed to upgrade to websocket: %v\n", err)
+		return
 	}
 	defer ws.Close()
 
@@ -71,5 +72,4 @@ func (api *WorkerApi) GetWorkerEvents(c echo.Context) error {
 	}
 
 	cancel()
-	return nil
 }

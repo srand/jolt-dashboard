@@ -12,7 +12,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	"github.com/labstack/echo/v4"
 	"github.com/srand/jolt-dashboard/model"
 )
 
@@ -36,30 +35,33 @@ func NewTaskApi(service *model.TaskService) *TaskApi {
 	return &TaskApi{service: service}
 }
 
-func (api *TaskApi) GetStatistics(c echo.Context) error {
+func (api *TaskApi) GetStatistics(w http.ResponseWriter, r *http.Request) {
 	stats, err := api.service.GetStatistics()
 	if err != nil {
-		return c.String(http.StatusInternalServerError, "internal server error")
+		writeString(w, http.StatusInternalServerError, "internal server error")
+		return
 	}
 
-	return c.JSON(http.StatusOK, stats)
+	writeJSON(w, http.StatusOK, stats)
 }
 
-func (api *TaskApi) GetTasks(c echo.Context) error {
+func (api *TaskApi) GetTasks(w http.ResponseWriter, r *http.Request) {
 	tasks, err := api.service.GetTasks()
 	if err != nil {
-		return c.String(http.StatusBadRequest, "bad request")
+		writeString(w, http.StatusBadRequest, "bad request")
+		return
 	}
 
-	return c.JSON(http.StatusOK, tasks)
+	writeJSON(w, http.StatusOK, tasks)
 }
 
-func (api *TaskApi) GetTaskEvents(c echo.Context) error {
+func (api *TaskApi) GetTaskEvents(w http.ResponseWriter, r *http.Request) {
 	upgrader := websocket.Upgrader{}
-	ws, err := upgrader.Upgrade(c.Response().Writer, c.Request(), nil)
+	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		err = fmt.Errorf("failed to upgrade to websocket: %w", err)
-		return c.String(http.StatusBadRequest, err.Error())
+		// The upgrader has already sent an error response.
+		fmt.Printf("failed to upgrade to websocket: %v\n", err)
+		return
 	}
 	defer ws.Close()
 
@@ -98,41 +100,45 @@ func (api *TaskApi) GetTaskEvents(c echo.Context) error {
 	}
 
 	cancel()
-	return nil
 }
 
-func (api *TaskApi) DeleteTask(c echo.Context) error {
-	uuid, err := uuid.Parse(c.Param("id"))
+func (api *TaskApi) DeleteTask(w http.ResponseWriter, r *http.Request) {
+	uuid, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
-		return c.String(http.StatusBadRequest, "bad request")
+		writeString(w, http.StatusBadRequest, "bad request")
+		return
 	}
 
 	task, err := api.service.GetTask(uuid)
 	if err != nil {
-		return c.String(http.StatusBadRequest, "bad request")
+		writeString(w, http.StatusBadRequest, "bad request")
+		return
 	}
 
 	err = api.service.DeleteTask(task)
 	if err != nil {
-		return c.String(http.StatusBadRequest, "bad request")
+		writeString(w, http.StatusBadRequest, "bad request")
+		return
 	}
 
-	return c.String(http.StatusOK, "")
+	writeString(w, http.StatusOK, "")
 }
 
-func (api *TaskApi) GetTaskLog(c echo.Context) error {
-	uuid, err := uuid.Parse(c.Param("id"))
+func (api *TaskApi) GetTaskLog(w http.ResponseWriter, r *http.Request) {
+	uuid, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
-		return c.String(http.StatusBadRequest, "bad request")
+		writeString(w, http.StatusBadRequest, "bad request")
+		return
 	}
 
 	task, err := api.service.GetTask(uuid)
 	if err != nil || task.Log == "" {
-		return c.String(http.StatusNotFound, "not found")
+		writeString(w, http.StatusNotFound, "not found")
+		return
 	}
 
 	logUrl := task.Log
-	if c.QueryParam("follow") == "1" {
+	if r.URL.Query().Get("follow") == "1" {
 		// Ask logstash to hold the response open while the task is writing.
 		// Parsed rather than appended blindly: the producer never puts a
 		// query string on task.Log today, but string concatenation would
@@ -140,7 +146,8 @@ func (api *TaskApi) GetTaskLog(c echo.Context) error {
 		// existing parameter) the day that stops being true.
 		parsed, err := url.Parse(logUrl)
 		if err != nil {
-			return c.String(http.StatusBadGateway, err.Error())
+			writeString(w, http.StatusBadGateway, err.Error())
+			return
 		}
 		query := parsed.Query()
 		query.Set("follow", "1")
@@ -151,36 +158,39 @@ func (api *TaskApi) GetTaskLog(c echo.Context) error {
 	// The request context ties the upstream connection to this client. Without
 	// it, a closed dialog would leave the upstream read running for the rest of
 	// the task.
-	request, err := http.NewRequestWithContext(c.Request().Context(), http.MethodGet, logUrl, nil)
+	request, err := http.NewRequestWithContext(r.Context(), http.MethodGet, logUrl, nil)
 	if err != nil {
-		return c.String(http.StatusBadRequest, err.Error())
+		writeString(w, http.StatusBadRequest, err.Error())
+		return
 	}
 
 	response, err := logProxyClient.Do(request)
 	if err != nil {
-		return c.String(http.StatusBadGateway, err.Error())
+		writeString(w, http.StatusBadGateway, err.Error())
+		return
 	}
 	defer response.Body.Close()
 
-	c.Response().Header().Set(echo.HeaderContentType, response.Header.Get("Content-Type"))
+	w.Header().Set("Content-Type", response.Header.Get("Content-Type"))
 	// A buffering reverse proxy is the one deployment where chunked streaming
 	// stalls; this asks nginx not to.
-	c.Response().Header().Set("X-Accel-Buffering", "no")
+	w.Header().Set("X-Accel-Buffering", "no")
 	// Forward the upstream status rather than assuming 200: a log that has not
 	// been written yet 404s, and the dashboard's browser-side retry depends on
 	// seeing that 404 rather than a masked 200.
-	c.Response().WriteHeader(response.StatusCode)
+	w.WriteHeader(response.StatusCode)
 
-	// Copy by hand rather than with c.Stream: io.Copy leaves the bytes in
-	// net/http's buffer, which defeats the point of streaming.
+	// Copy by hand rather than with io.Copy, which leaves the bytes in
+	// net/http's buffer and defeats the point of streaming.
+	flusher := http.NewResponseController(w)
 	buf := make([]byte, 4096)
 	for {
 		n, readErr := response.Body.Read(buf)
 		if n > 0 {
-			if _, err := c.Response().Write(buf[:n]); err != nil {
-				return nil
+			if _, err := w.Write(buf[:n]); err != nil {
+				return
 			}
-			c.Response().Flush()
+			flusher.Flush()
 		}
 		if readErr != nil {
 			// A client going away cancels the upstream read via the request
@@ -191,7 +201,7 @@ func (api *TaskApi) GetTaskLog(c echo.Context) error {
 				!errors.Is(readErr, context.DeadlineExceeded) {
 				fmt.Printf("task %s: log stream read failed: %v\n", uuid, readErr)
 			}
-			return nil
+			return
 		}
 	}
 }

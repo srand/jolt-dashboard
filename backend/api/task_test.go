@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
 	"github.com/srand/jolt-dashboard/model"
 )
 
@@ -42,8 +41,8 @@ func newTestTaskServer(t *testing.T, logURL string) (*httptest.Server, string) {
 
 	api := NewTaskApi(&model.TaskService{Db: db, Broadcast: model.NewBroadcast()})
 
-	e := echo.New()
-	e.GET("/api/v1/tasks/:id/log", api.GetTaskLog)
+	e := http.NewServeMux()
+	e.HandleFunc("GET /api/v1/tasks/{id}/log", api.GetTaskLog)
 	server := httptest.NewServer(e)
 	t.Cleanup(server.Close)
 
