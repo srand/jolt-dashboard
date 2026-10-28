@@ -52,8 +52,22 @@ scheduler --gRPC StreamEvents--> scheduler.Client --> model.TaskService/WorkerSe
   absent from the snapshot was lost while disconnected and is terminated. This is why the dashboard
   cannot drift, and why reconciliation logic belongs in `scheduler/client.go`, not in the API layer.
 - **Tasks and workers have separate `Broadcast` instances** (wired in `main.go`) so the task
-  websocket only ever carries tasks. `Broadcast.Send` drops events on a full client channel rather
-  than blocking — a slow browser must never stall the scheduler stream.
+  websocket only ever carries tasks. `Subscribe()` registers a consumer and captures detached rows
+  under the service's database-owned mutation/publication coordinator. Each websocket's first DATA
+  frame is `{"type":"snapshot","items":[...]}` (empty lists use `[]`), then raw task/worker updates
+  with existing `Deleted` markers. The snapshot is separate from the incremental queue; JSON and
+  socket writes must remain outside mutation locks. Task and worker snapshots are independently
+  consistent, not a global cross-stream transaction. Deploy backend/frontend together for this
+  snapshot-first wire contract; REST list endpoints remain unchanged for other clients.
+  `Broadcast.Send` never waits for subscriber capacity: a full
+  10-event queue evicts that client and signals `Overflow()`. The shared API websocket handler
+  attempts close code `1013`, then closes the socket even if the data writer is blocked. With live
+  updates enabled, `App` promptly replaces both sockets for fresh snapshots on `1013`;
+  other closes retain a ten-second delay. Reconnects coalesce and are cancelled on pause/unmount.
+  Initial load, reconnect, and resume use only the ordered websocket streams, never competing REST
+  list requests. Old lists stay visible until replacement snapshots arrive; stale socket callbacks
+  are ignored, and invalid/pre-snapshot frames trigger ordinary reconnect recovery.
+  A slow browser must never stall the scheduler stream.
 - **SQLite is a single writer**: the pool is pinned to one connection with WAL and `busy_timeout`
   (`model/database.go`). Don't introduce concurrent writers or a second pool.
 - **Timestamps cross the wire as preformatted local-time strings** (`"2006-01-02 15:04:05.999"`,
@@ -74,8 +88,14 @@ scheduler --gRPC StreamEvents--> scheduler.Client --> model.TaskService/WorkerSe
 
 ### Frontend
 
-Class components throughout, no hooks. `App` owns all state (`tasks`, `workers`, `updating`) and
-passes it down; `Tasks`/`Workers` are presentational wrappers around MUI's `DataGrid`.
+Class components throughout, no hooks. `App` owns the lists (`tasks`, `workers`), `updating`, and
+one `selectedTask` full view, and passes them down; `Tasks`/`Workers` wrap MUI's `DataGrid`.
+Task event reducers refresh the selected view before removal can hide an intermediate update in
+React's batching. `Tasks` also retains the last observed row for standalone use. An open details
+dialog keeps this full object (including cleared attribution) after removal, displays
+`Task is no longer in the current list`, and preserves the log stream/output. Presence is checked
+against full rows, not filtered rows. Do not synthesize a task status or restart log fetching on
+same-ID metadata changes. Selection is cleared on dialog close/tab change; no per-task history.
 
 **Derived values are computed in `render`, not stored in state.** `setState` inside a promise
 callback does not update `this.state` synchronously under React 18's automatic batching, so

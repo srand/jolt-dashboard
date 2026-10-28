@@ -153,16 +153,22 @@ func isSQLiteContention(err error) bool {
 func (c *Client) apply(event *protocol.SchedulerEvent) error {
 	switch e := event.GetEvent().(type) {
 	case *protocol.SchedulerEvent_Snapshot:
-		log.Printf("synchronized with scheduler: %d tasks, %d workers",
-			len(e.Snapshot.GetTasks()), len(e.Snapshot.GetWorkers()))
+		log.Printf("synchronized with scheduler: %d tasks, %d workers, %d builds",
+			len(e.Snapshot.GetTasks()), len(e.Snapshot.GetWorkers()), len(e.Snapshot.GetBuilds()))
 
-		if err := c.tasks.ApplySnapshot(e.Snapshot.GetTasks()); err != nil {
+		if err := c.tasks.ApplyBuildTaskSnapshot(e.Snapshot.GetBuilds(), e.Snapshot.GetTasks()); err != nil {
 			return err
 		}
 		return c.workers.ApplySnapshot(e.Snapshot.GetWorkers())
 
 	case *protocol.SchedulerEvent_Task:
 		return c.tasks.ApplyTaskInfo(e.Task)
+
+	case *protocol.SchedulerEvent_Build:
+		return c.tasks.Builds.Upsert(e.Build)
+
+	case *protocol.SchedulerEvent_BuildRemoved:
+		return c.tasks.Builds.Remove(e.BuildRemoved.GetId())
 
 	case *protocol.SchedulerEvent_Worker:
 		return c.workers.Upsert(e.Worker)

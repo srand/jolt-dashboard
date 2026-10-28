@@ -1,12 +1,8 @@
 package api
 
 import (
-	"context"
-	"fmt"
 	"net/http"
-	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/srand/jolt-dashboard/model"
 )
 
@@ -29,47 +25,5 @@ func (api *WorkerApi) GetWorkers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *WorkerApi) GetWorkerEvents(w http.ResponseWriter, r *http.Request) {
-	upgrader := websocket.Upgrader{}
-	ws, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		// The upgrader has already sent an error response.
-		fmt.Printf("failed to upgrade to websocket: %v\n", err)
-		return
-	}
-	defer ws.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	consumer := api.service.Broadcast.NewClient()
-	defer consumer.Close()
-
-	go func(ctx context.Context) {
-		for {
-			select {
-			case worker := <-consumer.Chan:
-				err := ws.SetWriteDeadline(time.Now().Add(30 * time.Second))
-				if err != nil {
-					ws.Close()
-					return
-				}
-
-				err = ws.WriteJSON(worker)
-				if err != nil {
-					ws.Close()
-					return
-				}
-			case <-ctx.Done():
-				return
-			}
-		}
-	}(ctx)
-
-	for {
-		_, _, err = ws.ReadMessage()
-		if err != nil {
-			break
-		}
-	}
-
-	cancel()
+	getEvents(w, r, api.service.Subscribe)
 }

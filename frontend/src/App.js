@@ -33,6 +33,9 @@ const theme = createTheme({
   },
 });
 
+const OVERFLOW_CLOSE_CODE = 1013;
+const RECONNECT_DELAY_MS = 10000;
+
 
 function TabPanel(props) {
   const { children, value, index, ...other } = props;
@@ -68,6 +71,7 @@ class App extends React.Component {
       updating: true,
       tasks: [],
       workers: [],
+      selectedTask: null,
     };
   }
 
@@ -76,67 +80,120 @@ class App extends React.Component {
     return protocol + window.location.host + path;
   }
 
-  connectWebsocket() {
-    this.client = new WebSocket(this.websocketUrl('/api/v1/tasks/events'));
-    this.client.onmessage = (message) => {
-      if (!this.state.updating) {
-        this.client.close();
-        return
+  connectWebsocket(list, clientKey, statusKey) {
+    const client = new WebSocket(this.websocketUrl(`/api/v1/${list}/events`));
+    this[clientKey] = client;
+    let initialized = false;
+    let active = true;
+    const validItem = (item) => item && typeof item === 'object' && !Array.isArray(item) &&
+      typeof item.id === 'string' && item.id.length > 0 &&
+      typeof item[statusKey] === 'string' && item.type === undefined;
+    client.onmessage = (message) => {
+      if (!this.mounted || this[clientKey] !== client || !active) {
+        return;
+      }
+      let event;
+      try {
+        event = JSON.parse(message.data);
+        if (!initialized) {
+          if (event?.type !== 'snapshot' || !Array.isArray(event.items) || !event.items.every(validItem)) {
+            throw new Error('Expected a stream snapshot');
+          }
+        } else if (!validItem(event)) {
+          throw new Error('Expected a stream update');
+        }
+      } catch {
+        // Do not buffer or apply frames from a stream without a valid baseline.
+        active = false;
+        client.onmessage = null;
+        client.close();
+        this.scheduleReconnect(RECONNECT_DELAY_MS);
+        return;
       }
 
-      var task = JSON.parse(message.data);
-      this.setState(function (prevState, props) {
-        let tasks = prevState.tasks.filter(function (task2) {
-          return task2.id !== task.id;
-        })
-        if (task.Status !== "Deleted") {
-          tasks.push(task);
+      if (!initialized) {
+        // Mark initialization synchronously so the next frame in this React
+        // batch is an update; queue every state change in message order.
+        initialized = true;
+        this.setState((prevState) => {
+          const nextState = { [list]: event.items };
+          if (list === 'tasks' && prevState.selectedTask) {
+            nextState.selectedTask = event.items.find((task) =>
+              task.id === prevState.selectedTask.id && task.Status !== 'Deleted') || prevState.selectedTask;
+          }
+          return nextState;
+        });
+        return;
+      }
+      this.setState((prevState) => {
+        const items = prevState[list].filter((item) => item.id !== event.id);
+        const nextState = { [list]: items };
+        if (event[statusKey] !== 'Deleted') {
+          items.push(event);
+          // Keep the selected full view even if a later frame removes its row
+          // before React renders this batch. Deleted frames are not details.
+          if (list === 'tasks' && prevState.selectedTask?.id === event.id) {
+            nextState.selectedTask = event;
+          }
         }
-        return { tasks: tasks };
+        return nextState;
       });
     };
-    this.client.onclose = () => {
-      if (this.state.updating) {
-        setTimeout(this.fetchAndConnect.bind(this), 10000);
+    client.onclose = (event) => {
+      active = false;
+      if (this[clientKey] === client) {
+        this.scheduleReconnect(event?.code === OVERFLOW_CLOSE_CODE ? 0 : RECONNECT_DELAY_MS);
       }
     };
   }
 
-  connectWorkerWebsocket() {
-    // Reconnects are driven by the task socket, so drop any previous one.
-    if (this.workerClient) {
-      this.workerClient.close();
+  clearReconnect() {
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+  }
+
+  scheduleReconnect(delay) {
+    if (!this.mounted || !this.state.updating) {
+      return;
     }
-
-    this.workerClient = new WebSocket(this.websocketUrl('/api/v1/workers/events'));
-    this.workerClient.onmessage = (message) => {
-      if (!this.state.updating) {
-        this.workerClient.close();
-        return
+    // Both streams can overflow together. Reconnect once, and let an overflow
+    // accelerate any ordinary reconnect already waiting on its backoff.
+    if (this.reconnectTimer != null && this.reconnectDelay <= delay) {
+      return;
+    }
+    this.clearReconnect();
+    this.reconnectDelay = delay;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (this.mounted && this.state.updating) {
+        this.connectStreams();
       }
-
-      var worker = JSON.parse(message.data);
-      this.setState(function (prevState, props) {
-        let workers = prevState.workers.filter(function (worker2) {
-          return worker2.id !== worker.id;
-        })
-        if (worker.TaskStatus !== "Deleted") {
-          workers.push(worker);
-        }
-        return { workers: workers };
-      });
-    };
+    }, delay);
   }
 
-  fetchAndConnect() {
-    this.fetchTasks();
-    this.fetchWorkers();
-    this.connectWebsocket();
-    this.connectWorkerWebsocket();
+  disconnectWebsockets() {
+    for (const client of [this.client, this.workerClient]) {
+      if (client) {
+        // Replacing/closing our own sockets must not schedule another reconnect.
+        client.onmessage = null;
+        client.onclose = null;
+        client.close();
+      }
+    }
+    this.client = null;
+    this.workerClient = null;
+  }
+
+  connectStreams() {
+    this.clearReconnect();
+    this.disconnectWebsockets();
+    this.connectWebsocket('tasks', 'client', 'Status');
+    this.connectWebsocket('workers', 'workerClient', 'TaskStatus');
   }
 
   componentDidMount() {
-    this.fetchAndConnect();
+    this.mounted = true;
+    this.connectStreams();
 
     // The queue time of a task that has not started yet grows with the wall
     // clock, so a changing task list is not enough to keep those metrics
@@ -150,49 +207,36 @@ class App extends React.Component {
   }
 
   componentWillUnmount() {
+    this.mounted = false;
     clearInterval(this.ticker);
-  }
-
-  fetchWorkers() {
-    fetch("/api/v1/workers")
-      .then((response) => response.json())
-      .then((json) => {
-        this.setState({ workers: json });
-      })
-      .catch((reason) => { });
-  }
-
-  fetchTasks() {
-    fetch("/api/v1/tasks")
-      .then((response) => response.json())
-      .then((json) => {
-        this.setState({ tasks: json });
-      })
-      .catch((reason) => { });
+    this.clearReconnect();
+    this.disconnectWebsockets();
   }
 
   handleMenuItemChange(event, newItem) {
-    this.setState({ menuItem: newItem });
+    this.setState({ menuItem: newItem, selectedTask: null });
   };
 
   handleTaskDeleted(task) {
     fetch("/api/v1/tasks/" + task.id, { method: 'DELETE' })
       .then(() => {
-        this.setState({
-          tasks: this.state.tasks.filter(function (task2) {
+        this.setState((prevState) => ({
+          tasks: prevState.tasks.filter(function (task2) {
             return task2.id !== task.id
           })
-        });
+        }));
       });
   }
 
   onPause() {
+    this.clearReconnect();
+    this.disconnectWebsockets();
     this.setState({ updating: false });
   }
 
   onPlay() {
     this.setState({ updating: true });
-    this.fetchAndConnect();
+    this.connectStreams();
   }
 
   render() {
@@ -231,6 +275,11 @@ class App extends React.Component {
           <TabPanel value={this.state.menuItem} index={0}>
             <Tasks
               value={this.state.tasks}
+              selectedTask={this.state.selectedTask}
+              onLogOpen={(task) => this.setState((prevState) => ({
+                selectedTask: prevState.tasks.find((row) => row.id === task.id) || task,
+              }))}
+              onLogClose={() => this.setState({ selectedTask: null })}
               onDeleteClick={(task) => this.handleTaskDeleted(task)}
               onPause={() => this.onPause()}
               onPlay={() => this.onPlay()}

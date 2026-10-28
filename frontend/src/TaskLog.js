@@ -17,6 +17,7 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 
 import { createLogDecoder, isTerminalStatus } from './logStream';
 import { isScrolledToBottom } from './scroll';
+import Attribution from './Attribution';
 
 // How long to wait before asking again for a log that does not exist yet. A
 // task can be running before its first line is written.
@@ -359,7 +360,7 @@ class TaskLog extends React.Component {
                     <Box display="flex" alignItems="center">
                       <ListItemText primaryTypographyProps={{variant: "h5"}} primary={this.props.task.Name} secondary={this.props.task.Identity}></ListItemText>
                         <Box>
-                            <IconButton onClick={() => { this.props.onClose(); }}>
+                            <IconButton aria-label="Close task details" onClick={() => { this.props.onClose(); }}>
                                 <CloseIcon />
                             </IconButton>
                         </Box>
@@ -399,6 +400,23 @@ class TaskLog extends React.Component {
                         </Box>
                     </Box>
                 </Box>
+                <Box
+                    role="region"
+                    aria-label="Build attribution"
+                    tabIndex={0}
+                    marginLeft={3}
+                    marginRight={3}
+                    marginBottom={1}
+                    sx={{ minWidth: 0, flexShrink: 0, overflowX: 'auto' }}
+                >
+                    <ListItemText primary={<Attribution value={this.props.task.Build?.Origin} />} secondary="Origin" />
+                    <ListItemText primary={<Attribution value={this.props.task.Build?.Username} textOnly />} secondary="Username" />
+                </Box>
+                {this.props.removed && (
+                    <Box role="status" marginLeft={3} marginRight={3} marginBottom={1} sx={{ flexShrink: 0 }}>
+                        Task is no longer in the current list
+                    </Box>
+                )}
                 <DialogContent dividers={true} ref={this.scrollRef} onScroll={() => { this.onScroll(); }}>
                     <DialogContentText
                         component="div"

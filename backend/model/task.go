@@ -8,12 +8,16 @@ import (
 	"github.com/google/uuid"
 	"github.com/srand/jolt-dashboard/protocol"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"gorm.io/gorm"
 )
 
 type Task struct {
-	Instance   uuid.UUID `json:"id" gorm:"primaryKey"`
-	Name       string
-	Identity   string
+	Instance uuid.UUID `json:"id" gorm:"primaryKey"`
+	Name     string
+	Identity string
+	BuildID  string `json:"BuildId" gorm:"index;not null;default:''"`
+	// Missing builds are valid, including when tasks arrive before build events.
+	Build      *Build `gorm:"foreignKey:BuildID;references:ID;constraint:-"`
 	RoutingKey string
 	Worker     string
 	Status     string
@@ -74,6 +78,7 @@ func NewTaskFromInfo(info *protocol.TaskInfo) (*Task, error) {
 		Instance:   instance,
 		Name:       info.GetName(),
 		Identity:   info.GetIdentity(),
+		BuildID:    info.GetBuildId(),
 		RoutingKey: strings.Join(info.GetLabels(), ","),
 		Worker:     info.GetWorkerHostname(),
 		Status:     TaskStatusName(info.GetStatus()),
@@ -88,14 +93,16 @@ func NewTaskFromInfo(info *protocol.TaskInfo) (*Task, error) {
 type TaskService struct {
 	Db        *Database
 	Broadcast *Broadcast
+	Builds    *BuildService
 }
 
 func NewTaskService(db *Database) *TaskService {
-	err := db.AutoMigrate(&Task{})
+	service := &TaskService{Db: db, Broadcast: NewBroadcast()}
+	service.Builds = NewBuildService(db, service.Broadcast)
+	err := db.db.AutoMigrate(&Task{})
 	if err != nil {
 		log.Fatal(err)
 	}
-	service := &TaskService{Db: db, Broadcast: NewBroadcast()}
 	go service.garbageCollect()
 	return service
 }
@@ -104,25 +111,55 @@ func (service *TaskService) garbageCollect() {
 	timer := time.NewTicker(time.Minute)
 	for {
 		<-timer.C
-		queuedCutoff := time.Now().Add(-(time.Hour * 48)).Format(timeFormat)
-		endedCutOff := time.Now().Add(-time.Hour).Format(timeFormat)
-
-		var tasks []Task
-		service.Db.db.Where("(queued < ?) or (ended != '' and ended < ?) ", queuedCutoff, endedCutOff).Find(&tasks)
-
-		for _, lost := range tasks {
-			service.DeleteTask(&lost)
+		if err := service.collectExpiredTasks(time.Now()); err != nil {
+			log.Println("task retention failed:", err)
 		}
 	}
 }
 
+func (service *TaskService) collectExpiredTasks(now time.Time) error {
+	service.Db.taskCoordinator.Lock()
+	defer service.Db.taskCoordinator.Unlock()
+	queuedCutoff := now.Add(-time.Hour * 48).Format(timeFormat)
+	endedCutoff := now.Add(-time.Hour).Format(timeFormat)
+	var tasks []Task
+	if err := service.Db.db.Preload("Build").Where("(queued < ?) or (ended != '' and ended < ?)", queuedCutoff, endedCutoff).Find(&tasks).Error; err != nil {
+		return err
+	}
+	for i := range tasks {
+		if err := service.deleteTask(&tasks[i]); err != nil {
+			return err
+		}
+	}
+	return service.Builds.garbageCollect()
+}
+
 func (service *TaskService) updateTask(task *Task) error {
-	result := service.Db.db.Save(task)
-	service.Broadcast.Send(task)
-	return result.Error
+	service.Db.taskCoordinator.Lock()
+	defer service.Db.taskCoordinator.Unlock()
+	var view *Task
+	if err := service.Db.db.Transaction(func(tx *gorm.DB) error {
+		if err := service.saveTask(tx, task); err != nil {
+			return err
+		}
+		var err error
+		view, err = service.getTask(tx, task.Instance)
+		return err
+	}); err != nil {
+		return err
+	}
+	service.Broadcast.Send(view)
+	return nil
+}
+
+// Internal operations run under the shared task/build coordinator.
+func (service *TaskService) saveTask(db *gorm.DB, task *Task) error {
+	return db.Omit("Build").Save(task).Error
 }
 
 func (service *TaskService) GetStatistics() (*Statistics, error) {
+	service.Db.taskCoordinator.Lock()
+	defer service.Db.taskCoordinator.Unlock()
 	var tasks []Task
 	result := service.Db.db.Find(&tasks)
 	if result.Error != nil {
@@ -215,8 +252,14 @@ func (service *TaskService) GetStatistics() (*Statistics, error) {
 }
 
 func (service *TaskService) GetTask(instance uuid.UUID) (*Task, error) {
+	service.Db.taskCoordinator.Lock()
+	defer service.Db.taskCoordinator.Unlock()
+	return service.getTask(service.Db.db, instance)
+}
+
+func (service *TaskService) getTask(db *gorm.DB, instance uuid.UUID) (*Task, error) {
 	var dbtask Task
-	result := service.Db.db.Where("instance = ?", instance).Take(&dbtask)
+	result := db.Preload("Build").Where("instance = ?", instance).Take(&dbtask)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -224,28 +267,77 @@ func (service *TaskService) GetTask(instance uuid.UUID) (*Task, error) {
 }
 
 func (service *TaskService) GetTasks() ([]Task, error) {
-	var tasks []Task
-	result := service.Db.db.Find(&tasks)
+	service.Db.taskCoordinator.Lock()
+	defer service.Db.taskCoordinator.Unlock()
+	return service.getTasks()
+}
+
+func (service *TaskService) getTasks() ([]Task, error) {
+	tasks := []Task{}
+	result := service.Db.db.Preload("Build").Find(&tasks)
 	if result.Error != nil {
 		return nil, result.Error
 	}
 	return tasks, nil
 }
 
+func (service *TaskService) Subscribe() (*EventSubscription, error) {
+	service.Db.taskCoordinator.Lock()
+	defer service.Db.taskCoordinator.Unlock()
+	consumer := service.Broadcast.NewClient()
+	tasks, err := service.getTasks()
+	if err != nil {
+		consumer.Close()
+		return nil, err
+	}
+	return &EventSubscription{Snapshot: tasks, Chan: consumer.Chan, consumer: consumer}, nil
+}
+
 func (service *TaskService) DeleteTask(task *Task) error {
-	task.Status = "Deleted"
-	service.Broadcast.Send(task)
-	return service.Db.Delete(task)
+	service.Db.taskCoordinator.Lock()
+	defer service.Db.taskCoordinator.Unlock()
+	return service.deleteTask(task)
+}
+
+func (service *TaskService) deleteTask(task *Task) error {
+	if err := service.Db.db.Delete(task).Error; err != nil {
+		return err
+	}
+	deleted := *task
+	deleted.Status = "Deleted"
+	service.Broadcast.Send(&deleted)
+	return nil
 }
 
 // ApplyTaskInfo records the scheduler's view of a single task.
 func (service *TaskService) ApplyTaskInfo(info *protocol.TaskInfo) error {
+	service.Db.taskCoordinator.Lock()
+	defer service.Db.taskCoordinator.Unlock()
+	var view *Task
+	if err := service.Db.db.Transaction(func(tx *gorm.DB) error {
+		if err := service.applyTaskInfo(tx, info); err != nil {
+			return err
+		}
+		var err error
+		view, err = service.getTask(tx, uuid.MustParse(info.GetInstance()))
+		return err
+	}); err != nil {
+		return err
+	}
+	service.Broadcast.Send(view)
+	return nil
+}
+
+func (service *TaskService) applyTaskInfo(db *gorm.DB, info *protocol.TaskInfo) error {
 	task, err := NewTaskFromInfo(info)
 	if err != nil {
 		return err
 	}
 
-	previous, previousErr := service.GetTask(task.Instance)
+	previous, previousErr := service.getTask(db, task.Instance)
+	if previousErr != nil && previousErr != gorm.ErrRecordNotFound {
+		return previousErr
+	}
 	if previousErr == nil && task.Assigned == "" {
 		task.Assigned = previous.Assigned
 	}
@@ -256,7 +348,7 @@ func (service *TaskService) ApplyTaskInfo(info *protocol.TaskInfo) error {
 		task.Log = previous.Log
 	}
 
-	return service.updateTask(task)
+	return service.saveTask(db, task)
 }
 
 // ApplySnapshot reconciles the database with the scheduler's complete view of
@@ -264,6 +356,69 @@ func (service *TaskService) ApplyTaskInfo(info *protocol.TaskInfo) error {
 // progress but that the scheduler no longer knows about are terminated; they
 // were lost while the dashboard was disconnected.
 func (service *TaskService) ApplySnapshot(tasks []*protocol.TaskInfo) error {
+	service.Db.taskCoordinator.Lock()
+	defer service.Db.taskCoordinator.Unlock()
+	var views []Task
+	if err := service.Db.db.Transaction(func(tx *gorm.DB) error {
+		affected := map[uuid.UUID]bool{}
+		if err := service.applySnapshot(tx, tasks, affected); err != nil {
+			return err
+		}
+		var err error
+		views, err = snapshotTaskViews(tx, affected, nil)
+		return err
+	}); err != nil {
+		return err
+	}
+	for i := range views {
+		service.Broadcast.Send(&views[i])
+	}
+	return nil
+}
+
+// ApplyBuildTaskSnapshot reconciles both phases before publishing final views.
+// Retention must not remove metadata between build unregistration and task restore.
+func (service *TaskService) ApplyBuildTaskSnapshot(builds []*protocol.BuildInfo, tasks []*protocol.TaskInfo) error {
+	service.Db.taskCoordinator.Lock()
+	defer service.Db.taskCoordinator.Unlock()
+	var views []Task
+	if err := service.Db.db.Transaction(func(tx *gorm.DB) error {
+		buildIDs, err := service.Builds.applySnapshot(tx, builds)
+		if err != nil {
+			return err
+		}
+		affected := map[uuid.UUID]bool{}
+		if err := service.applySnapshot(tx, tasks, affected); err != nil {
+			return err
+		}
+		views, err = snapshotTaskViews(tx, affected, buildIDs)
+		return err
+	}); err != nil {
+		return err
+	}
+	for i := range views {
+		service.Broadcast.Send(&views[i])
+	}
+	return nil
+}
+
+// Select final views in the mutation transaction; callers publish after commit.
+func snapshotTaskViews(db *gorm.DB, affected map[uuid.UUID]bool, buildIDs []string) ([]Task, error) {
+	if len(affected) == 0 && len(buildIDs) == 0 {
+		return nil, nil
+	}
+	instances := make([]uuid.UUID, 0, len(affected))
+	for instance := range affected {
+		instances = append(instances, instance)
+	}
+	var tasks []Task
+	if err := db.Preload("Build").Where("instance IN ? OR build_id IN ?", instances, buildIDs).Find(&tasks).Error; err != nil {
+		return nil, err
+	}
+	return tasks, nil
+}
+
+func (service *TaskService) applySnapshot(db *gorm.DB, tasks []*protocol.TaskInfo, affected map[uuid.UUID]bool) error {
 	present := map[uuid.UUID]bool{}
 
 	for _, info := range tasks {
@@ -274,13 +429,14 @@ func (service *TaskService) ApplySnapshot(tasks []*protocol.TaskInfo) error {
 		}
 		present[task.Instance] = true
 
-		if err := service.ApplyTaskInfo(info); err != nil {
+		if err := service.applyTaskInfo(db, info); err != nil {
 			return err
 		}
+		affected[task.Instance] = true
 	}
 
 	var stale []Task
-	result := service.Db.db.Where("status in ?", []string{"Queued", "Assigned", "Running"}).Find(&stale)
+	result := db.Where("status in ?", []string{"Queued", "Assigned", "Running"}).Find(&stale)
 	if result.Error != nil {
 		return result.Error
 	}
@@ -292,9 +448,10 @@ func (service *TaskService) ApplySnapshot(tasks []*protocol.TaskInfo) error {
 
 		task.Status = "Cancelled"
 		task.Ended = Now()
-		if err := service.updateTask(&task); err != nil {
+		if err := service.saveTask(db, &task); err != nil {
 			return err
 		}
+		affected[task.Instance] = true
 	}
 
 	return nil
