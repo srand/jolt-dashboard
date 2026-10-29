@@ -141,8 +141,15 @@ task history.
 
 | Environment variable | Description | Default |
 | --- | --- | --- |
-| `JOLT_SCHEDULER_URI` | gRPC URI of the scheduler | `tcp://jolt-scheduler:9090` |
+| `JOLT_SCHEDULER_URI` | gRPC URI of the scheduler, `tls://` for TLS | `tcp://jolt-scheduler:9090` |
+| `JOLT_SCHEDULER_TOKEN` | Token that authenticates the dashboard with the scheduler, with the `read` permission | |
+| `JOLT_CA_CERT` | PEM file with the certificates of the authorities that the scheduler's certificate is verified with, in addition to those of the system | |
+| `JOLT_ALLOW_INSECURE_TOKEN` | Set to `true` to send the token without TLS | `false` |
 | `PORT` | Port to serve the web application on | `8080` |
+
+The token is only sent over TLS unless `JOLT_ALLOW_INSECURE_TOKEN` allows otherwise. The
+dashboard itself doesn't authenticate its users, so anyone who can reach it sees what the
+token can read from the scheduler.
 
 ## Development
 

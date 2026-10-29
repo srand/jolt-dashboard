@@ -29,7 +29,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	go scheduler.NewClient(schedulerUri, taskService, workerService).Run(ctx)
+	go scheduler.NewClient(schedulerUri, scheduler.OptionsFromEnvironment(), taskService, workerService).Run(ctx)
 
 	router := api.NewRouter(api.NewTaskApi(taskService), api.NewWorkerApi(workerService))
 	if err := router.Run(ctx); err != nil {

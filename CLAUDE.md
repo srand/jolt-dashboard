@@ -30,8 +30,10 @@ the API. Build the frontend and place it in `static/` next to the backend binary
 `build.jolt` `Run` task, which assembles both and runs on `PORT=8082` against
 `JOLT_SCHEDULER_URI=tcp://:9090`. `jolt build` builds the docker image.
 
-Configuration is two environment variables: `JOLT_SCHEDULER_URI` (default
-`tcp://jolt-scheduler:9090`) and `PORT` (default `8080`).
+Configuration is environment variables: `JOLT_SCHEDULER_URI` (default
+`tcp://jolt-scheduler:9090`, `tls://` for TLS), `PORT` (default `8080`), and
+`JOLT_SCHEDULER_TOKEN`, `JOLT_CA_CERT` and `JOLT_ALLOW_INSECURE_TOKEN`, which authenticate with
+the scheduler like Jolt does (`backend/scheduler/credentials.go`).
 
 The gRPC stubs in `backend/protocol` are vendored; regenerate with `backend/protocol/generate.sh`.
 

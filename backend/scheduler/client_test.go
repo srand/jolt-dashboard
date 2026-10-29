@@ -30,7 +30,7 @@ func TestApplyBuildEvents(t *testing.T) {
 				t.Fatal(err)
 			}
 			workers := model.NewWorkerService(db, model.NewBroadcast())
-			client := NewClient("", tasks, workers)
+			client := NewClient("", Options{}, tasks, workers)
 			consumer := tasks.Broadcast.NewClient()
 			defer consumer.Close()
 			instance := uuid.New()
@@ -109,7 +109,7 @@ func TestSnapshotPublishesSixFinalTaskViews(t *testing.T) {
 	if err := db.AutoMigrate(&model.Task{}); err != nil {
 		t.Fatal(err)
 	}
-	client := NewClient("", tasks, model.NewWorkerService(db, model.NewBroadcast()))
+	client := NewClient("", Options{}, tasks, model.NewWorkerService(db, model.NewBroadcast()))
 	build := &protocol.BuildInfo{Id: "build"}
 	if err := tasks.Builds.Upsert(build); err != nil {
 		t.Fatal(err)

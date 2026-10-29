@@ -14,7 +14,6 @@ import (
 	"github.com/srand/jolt-dashboard/model"
 	"github.com/srand/jolt-dashboard/protocol"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 const (
@@ -36,6 +35,7 @@ const (
 // was lost while disconnected and is terminated.
 type Client struct {
 	uri     string
+	options Options
 	tasks   *model.TaskService
 	workers *model.WorkerService
 
@@ -43,8 +43,8 @@ type Client struct {
 	applyFn func(*protocol.SchedulerEvent) error
 }
 
-func NewClient(uri string, tasks *model.TaskService, workers *model.WorkerService) *Client {
-	return &Client{uri: uri, tasks: tasks, workers: workers}
+func NewClient(uri string, options Options, tasks *model.TaskService, workers *model.WorkerService) *Client {
+	return &Client{uri: uri, options: options, tasks: tasks, workers: workers}
 }
 
 // Run maintains the subscription until the context is cancelled.
@@ -81,7 +81,12 @@ func (c *Client) stream(ctx context.Context) error {
 		return err
 	}
 
-	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	opts, err := dialOptions(c.uri, c.options)
+	if err != nil {
+		return err
+	}
+
+	conn, err := grpc.NewClient(target, opts...)
 	if err != nil {
 		return err
 	}
@@ -196,7 +201,7 @@ func parseUri(uri string) (string, error) {
 		return "", err
 	}
 
-	if parsed.Scheme != "tcp" {
+	if parsed.Scheme != "tcp" && parsed.Scheme != "tls" {
 		return "", fmt.Errorf("unsupported scheduler protocol: %s", parsed.Scheme)
 	}
 
