@@ -186,7 +186,7 @@ func TestIncrementalFailureRollsBackAndRecoveryPublishesFinalViews(t *testing.T)
 							if view.Build == nil || view.Build.Registered != (operation == "build upsert") {
 								t.Fatalf("recovery lost build registration: %+v", view)
 							}
-							if operation == "build upsert" && (view.Build.Status != build.Status.String() || view.Build.Username != "" || view.Build.Origin != "") {
+							if operation == "build upsert" && (view.Build.Status != build.Status.String() || view.Build.Origin != "") {
 								t.Fatalf("recovery lost replacement metadata: %+v", view.Build)
 							}
 							if operation == "build remove" && view.Build.Origin != beforeBuilds[0].Origin {

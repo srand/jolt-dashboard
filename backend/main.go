@@ -29,9 +29,25 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	go scheduler.NewClient(schedulerUri, scheduler.OptionsFromEnvironment(), taskService, workerService).Run(ctx)
+	options := scheduler.OptionsFromEnvironment()
+	go scheduler.NewClient(schedulerUri, options, taskService, workerService).Run(ctx)
 
-	router := api.NewRouter(api.NewTaskApi(taskService), api.NewWorkerApi(workerService))
+	// Users sign in with this provider to cancel builds. Its tokens must be
+	// issued to a client that the scheduler accepts tokens for.
+	auth := api.AuthConfig{
+		Issuer:   os.Getenv("JOLT_AUTH_ISSUER"),
+		ClientID: os.Getenv("JOLT_AUTH_CLIENT_ID"),
+	}
+	if auth.ClientID == "" {
+		auth.ClientID = "jolt"
+	}
+
+	router := api.NewRouter(
+		api.NewTaskApi(taskService),
+		api.NewWorkerApi(workerService),
+		api.NewBuildApi(scheduler.NewBuildCanceller(schedulerUri, options), auth),
+		api.NewEventApi(taskService, workerService),
+	)
 	if err := router.Run(ctx); err != nil {
 		log.Fatal(err)
 	}

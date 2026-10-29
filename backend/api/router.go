@@ -113,17 +113,21 @@ func staticHandler(dir string) http.Handler {
 func NewRouter(
 	apiTask *TaskApi,
 	apiWorker *WorkerApi,
+	apiBuild *BuildApi,
+	apiEvent *EventApi,
 ) *Router {
 	r := http.NewServeMux()
 
 	r.HandleFunc("GET /api/v1/statistics", apiTask.GetStatistics)
 	r.HandleFunc("GET /api/v1/tasks", apiTask.GetTasks)
 	// r.HandleFunc("GET /api/v1/task/{id}", apiTask.GetTask)
-	r.HandleFunc("DELETE /api/v1/tasks/{id}", apiTask.DeleteTask)
 	r.HandleFunc("GET /api/v1/tasks/{id}/log", apiTask.GetTaskLog)
 	r.HandleFunc("GET /api/v1/tasks/events", apiTask.GetTaskEvents)
 	r.HandleFunc("GET /api/v1/workers", apiWorker.GetWorkers)
 	r.HandleFunc("GET /api/v1/workers/events", apiWorker.GetWorkerEvents)
+	r.HandleFunc("GET /api/v1/events", apiEvent.GetEvents)
+	r.HandleFunc("GET /api/v1/auth", apiBuild.GetAuth)
+	r.HandleFunc("POST /api/v1/builds/{id}/cancel", apiBuild.CancelBuild)
 
 	r.Handle("/", staticHandler("static"))
 

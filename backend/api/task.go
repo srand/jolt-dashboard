@@ -57,28 +57,6 @@ func (api *TaskApi) GetTaskEvents(w http.ResponseWriter, r *http.Request) {
 	getEvents(w, r, api.service.Subscribe)
 }
 
-func (api *TaskApi) DeleteTask(w http.ResponseWriter, r *http.Request) {
-	uuid, err := uuid.Parse(r.PathValue("id"))
-	if err != nil {
-		writeString(w, http.StatusBadRequest, "bad request")
-		return
-	}
-
-	task, err := api.service.GetTask(uuid)
-	if err != nil {
-		writeString(w, http.StatusBadRequest, "bad request")
-		return
-	}
-
-	err = api.service.DeleteTask(task)
-	if err != nil {
-		writeString(w, http.StatusBadRequest, "bad request")
-		return
-	}
-
-	writeString(w, http.StatusOK, "")
-}
-
 func (api *TaskApi) GetTaskLog(w http.ResponseWriter, r *http.Request) {
 	uuid, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {

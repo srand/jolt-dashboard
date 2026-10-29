@@ -32,7 +32,7 @@ func newEventTestServices(t *testing.T) (*model.TaskService, *model.WorkerServic
 
 func seedEventViews(t *testing.T, tasks *model.TaskService, workers *model.WorkerService) (*protocol.TaskInfo, *protocol.WorkerInfo) {
 	t.Helper()
-	if err := tasks.Builds.Upsert(&protocol.BuildInfo{Id: "build", Parameters: []*protocol.Property{{Key: "config.username", Value: "user"}, {Key: "config.origin", Value: "origin"}, {Key: "config.token", Value: "secret"}}}); err != nil {
+	if err := tasks.Builds.Upsert(&protocol.BuildInfo{Id: "build", Parameters: []*protocol.Property{{Key: "config.branch", Value: "main"}, {Key: "config.origin", Value: "origin"}, {Key: "config.token", Value: "secret"}}}); err != nil {
 		t.Fatal(err)
 	}
 	info := &protocol.TaskInfo{Instance: uuid.NewString(), BuildId: "build", Identity: "identity", Name: "before", Status: protocol.TaskStatus_TASK_RUNNING, Labels: []string{"linux"}, WorkerHostname: "host", Log: "https://logs.example/task", QueuedAt: timestamppb.Now(), AssignedAt: timestamppb.Now(), StartedAt: timestamppb.Now()}
@@ -141,7 +141,7 @@ func TestEventSnapshotTransportPrecedesQueuedMutations(t *testing.T) {
 			defer releaseOnce.Do(func() { close(ws.release) })
 			done := make(chan struct{})
 			go func() {
-				serveEventWebsocket(ctx, ws, subscription.Snapshot, subscription.Chan, subscription.Overflow())
+				serveEventWebsocket(ctx, ws, snapshotFrame(subscription.Snapshot), subscription.Chan, subscription.Overflow())
 				close(done)
 			}()
 			select {

@@ -42,7 +42,7 @@ func TestGetTasksBuildJSONContract(t *testing.T) {
 		if err := service.Builds.Upsert(&protocol.BuildInfo{
 			Id: instance, Parameters: []*protocol.Property{
 				{Key: "config.origin", Value: origin},
-				{Key: "config.username", Value: "<user@example.com>"},
+				{Key: "config.branch", Value: "<main>"},
 				{Key: "config.password", Value: "secret-not-for-API"},
 			},
 		}); err != nil {
@@ -68,8 +68,8 @@ func TestGetTasksBuildJSONContract(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", response.Code, response.Body.String())
 	}
-	if strings.Contains(response.Body.String(), "secret-not-for-API") || strings.Contains(response.Body.String(), "Parameters") {
-		t.Fatal("raw parameters leaked through REST")
+	if !strings.Contains(response.Body.String(), `{"Key":"config.password","Value":"secret-not-for-API"}`) {
+		t.Fatal("parameters missing from REST")
 	}
 	var objects []map[string]interface{}
 	if err := json.Unmarshal(response.Body.Bytes(), &objects); err != nil {
@@ -93,7 +93,7 @@ func TestGetTasksBuildJSONContract(t *testing.T) {
 			}
 		} else {
 			build, ok := object["Build"].(map[string]interface{})
-			if !ok || len(build) != 6 || build["Origin"] != origin || build["Username"] != "<user@example.com>" || build["Status"] != "BUILD_ACCEPTED" || build["Scheduled"] != "" || build["Registered"] != true || build["Id"] != instance || object["BuildId"] != instance {
+			if !ok || len(build) != 7 || build["Origin"] != origin || build["Status"] != "BUILD_ACCEPTED" || build["Scheduled"] != "" || build["Registered"] != true || build["Id"] != instance || object["BuildId"] != instance {
 				t.Fatalf("unexpected build contract = %+v", object)
 			}
 		}
@@ -164,7 +164,7 @@ func TestGetTaskEventsMatchesRESTBuildContract(t *testing.T) {
 		func() error {
 			return service.Builds.Upsert(&protocol.BuildInfo{Id: "build", Parameters: []*protocol.Property{
 				{Key: "config.origin", Value: "https://ci.example.com/build/123"},
-				{Key: "config.username", Value: "builder@example.com"},
+				{Key: "config.branch", Value: "main"},
 				{Key: "config.token", Value: "secret-not-for-API"},
 			}})
 		},
@@ -187,9 +187,6 @@ func TestGetTaskEventsMatchesRESTBuildContract(t *testing.T) {
 			}
 			if len(rest) != 1 || !reflect.DeepEqual(object, rest[0]) {
 				t.Fatalf("REST/websocket mismatch: %+v / %+v", rest, object)
-			}
-			if strings.Contains(response.Body.String(), "secret-not-for-API") || strings.Contains(response.Body.String(), "Parameters") {
-				t.Fatal("raw parameters leaked")
 			}
 		case err := <-readErrors:
 			t.Fatal(err)

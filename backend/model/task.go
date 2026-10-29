@@ -382,6 +382,7 @@ func (service *TaskService) ApplyBuildTaskSnapshot(builds []*protocol.BuildInfo,
 	service.Db.taskCoordinator.Lock()
 	defer service.Db.taskCoordinator.Unlock()
 	var views []Task
+	var buildUpdates []BuildView
 	if err := service.Db.db.Transaction(func(tx *gorm.DB) error {
 		buildIDs, err := service.Builds.applySnapshot(tx, builds)
 		if err != nil {
@@ -391,7 +392,10 @@ func (service *TaskService) ApplyBuildTaskSnapshot(builds []*protocol.BuildInfo,
 		if err := service.applySnapshot(tx, tasks, affected); err != nil {
 			return err
 		}
-		views, err = snapshotTaskViews(tx, affected, buildIDs)
+		if views, err = snapshotTaskViews(tx, affected, buildIDs); err != nil {
+			return err
+		}
+		buildUpdates, err = buildViews(tx, buildIDs)
 		return err
 	}); err != nil {
 		return err
@@ -399,6 +403,7 @@ func (service *TaskService) ApplyBuildTaskSnapshot(builds []*protocol.BuildInfo,
 	for i := range views {
 		service.Broadcast.Send(&views[i])
 	}
+	service.Builds.publish(buildUpdates)
 	return nil
 }
 

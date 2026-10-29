@@ -203,7 +203,7 @@ func TestEventWebsocketOverflowUnblocksWriter(t *testing.T) {
 				defer ws.Close()
 				done := make(chan struct{})
 				go func() {
-					serveEventWebsocket(ctx, ws, []model.Task{}, consumer.Chan, consumer.Overflow())
+					serveEventWebsocket(ctx, ws, snapshotFrame([]model.Task{}), consumer.Chan, consumer.Overflow())
 					close(done)
 				}()
 				if blockedFrame == "update" {
@@ -269,7 +269,7 @@ func TestEventWebsocketShutdown(t *testing.T) {
 			}
 			done := make(chan struct{})
 			go func() {
-				serveEventWebsocket(ctx, ws, []model.Task{}, messages, make(chan struct{}))
+				serveEventWebsocket(ctx, ws, snapshotFrame([]model.Task{}), messages, make(chan struct{}))
 				close(done)
 			}()
 			if reason == "context cancellation" {

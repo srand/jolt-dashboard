@@ -39,10 +39,60 @@ func getEvents(w http.ResponseWriter, r *http.Request, subscribe func() (*model.
 		return
 	}
 
-	serveEventWebsocket(r.Context(), ws, consumer.Snapshot, consumer.Chan, consumer.Overflow())
+	serveEventWebsocket(r.Context(), ws, snapshotFrame(consumer.Snapshot), consumer.Chan, consumer.Overflow())
 }
 
-func serveEventWebsocket(ctx context.Context, ws eventWebsocket, snapshot interface{}, messages <-chan interface{}, overflow <-chan struct{}) {
+// The first frame of the stream of one kind of item.
+func snapshotFrame(items interface{}) interface{} {
+	return struct {
+		Type  string      `json:"type"`
+		Items interface{} `json:"items"`
+	}{Type: "snapshot", Items: items}
+}
+
+type EventApi struct {
+	tasks   *model.TaskService
+	workers *model.WorkerService
+}
+
+func NewEventApi(tasks *model.TaskService, workers *model.WorkerService) *EventApi {
+	return &EventApi{tasks: tasks, workers: workers}
+}
+
+// GetEvents streams tasks, workers and builds over one websocket. The first
+// frame is a snapshot of all three, followed by updates of type task, worker
+// and build.
+func (api *EventApi) GetEvents(w http.ResponseWriter, r *http.Request) {
+	if !websocket.IsWebSocketUpgrade(r) {
+		writeString(w, http.StatusBadRequest, "websocket upgrade required")
+		return
+	}
+	subscription, err := model.Subscribe(api.tasks, api.workers)
+	if err != nil {
+		writeString(w, http.StatusInternalServerError, "failed to read event snapshot")
+		return
+	}
+	defer subscription.Close()
+	upgrader := websocket.Upgrader{}
+	ws, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		// The upgrader has already sent an error response.
+		fmt.Printf("failed to upgrade to websocket: %v\n", err)
+		return
+	}
+
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+	events, overflow := subscription.Events(ctx)
+	serveEventWebsocket(ctx, ws, struct {
+		Type    string      `json:"type"`
+		Tasks   interface{} `json:"tasks"`
+		Workers interface{} `json:"workers"`
+		Builds  interface{} `json:"builds"`
+	}{Type: "snapshot", Tasks: subscription.Tasks, Workers: subscription.Workers, Builds: subscription.Builds}, events, overflow)
+}
+
+func serveEventWebsocket(ctx context.Context, ws eventWebsocket, first interface{}, messages <-chan interface{}, overflow <-chan struct{}) {
 	ctx, cancel := context.WithCancel(ctx)
 	readDone := make(chan struct{})
 	writeDone := make(chan struct{})
@@ -78,10 +128,7 @@ func serveEventWebsocket(ctx context.Context, ws eventWebsocket, snapshot interf
 			}
 			return ws.WriteJSON(message)
 		}
-		if err := write(struct {
-			Type  string      `json:"type"`
-			Items interface{} `json:"items"`
-		}{Type: "snapshot", Items: snapshot}); err != nil {
+		if err := write(first); err != nil {
 			return
 		}
 		for {

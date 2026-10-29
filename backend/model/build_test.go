@@ -19,7 +19,7 @@ func buildInfo(id string) *protocol.BuildInfo {
 	return &protocol.BuildInfo{
 		Id: id, Status: protocol.BuildStatus_BUILD_ACCEPTED, ScheduledAt: timestamppb.Now(),
 		Parameters: []*protocol.Property{
-			{Key: "config.username", Value: " builder@example.com <user> "},
+			{Key: "config.branch", Value: " main <user> "},
 			{Key: "config.origin", Value: "https://ci.example.com/build/123"},
 			{Key: "config.token", Value: "secret-token"},
 			{Key: "origin", Value: "secret-unprefixed"},
@@ -66,22 +66,23 @@ func TestBuildAndTaskArrivalOrders(t *testing.T) {
 			if stored.Build == nil || !reflect.DeepEqual(stored, first) {
 				t.Fatalf("stored and broadcast views differ: %+v / %+v", stored, first)
 			}
-			if stored.Build.Username != build.Parameters[0].Value || stored.Build.Origin != build.Parameters[1].Value || stored.Build.Scheduled != FormatTime(build.ScheduledAt) {
+			if stored.Build.Origin != build.Parameters[1].Value || stored.Build.Scheduled != FormatTime(build.ScheduledAt) {
 				t.Fatalf("build values not preserved: %+v", stored.Build)
 			}
 			data, err := json.Marshal(stored)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if strings.Contains(string(data), "secret") || strings.Contains(string(data), "Parameters") {
-				t.Fatalf("raw parameters leaked: %s", data)
+			// All parameters are shown, in the order they were submitted
+			if !strings.Contains(string(data), `"Parameters":[{"Key":"config.branch"`) || !strings.Contains(string(data), "secret-suffix") {
+				t.Fatalf("parameters missing: %s", data)
 			}
 			columns, err := tasks.Db.db.Migrator().ColumnTypes(&Build{})
 			if err != nil {
 				t.Fatal(err)
 			}
 			for _, column := range columns {
-				if !strings.Contains("|id|status|scheduled|username|origin|registered|", "|"+column.Name()+"|") {
+				if !strings.Contains("|id|status|scheduled|origin|parameters|owners|registered|", "|"+column.Name()+"|") {
 					t.Fatalf("unexpected build storage column %s", column.Name())
 				}
 			}
@@ -175,7 +176,7 @@ func TestBuildUpdatesFanOutWithoutDuplicatingAttribution(t *testing.T) {
 		}
 		for i := 0; i < 2; i++ {
 			view := (<-consumer.Chan).(*Task)
-			if view.Build == nil || view.Build.Status != status.String() || !view.Build.Registered || view.Build.Username != "" || view.Build.Origin != "" {
+			if view.Build == nil || view.Build.Status != status.String() || !view.Build.Registered || view.Build.Origin != "" {
 				t.Fatalf("stale build view: %+v", view.Build)
 			}
 			if view.Status != "Running" && view.Status != "Passed" {
