@@ -56,26 +56,46 @@ cancels pending reconnects; resuming updates establishes fresh snapshot-first
 streams. Invalid frames or updates received before a snapshot are rejected and
 trigger ordinary reconnect recovery rather than being buffered in the browser.
 
-## Build Attribution
+## Builds
 
-Submit attribution through configuration parameters:
+The Builds tab lists the builds of the scheduler, also those whose tasks are gone
+or not yet scheduled, and those that only retained tasks still refer to. Each row
+expands, on a click anywhere in it, to the statistics of the build's tasks, its
+owners and all its configuration parameters.
 
-```sh
-jolt -c params.username=alice -c params.origin="$BUILD_URL" build --network my-task
-```
+- **Owners** are the authenticated clients that submitted the build, recorded by
+  the scheduler from their tokens. Identical submissions share a build, so a build
+  can have several owners. The scheduler doesn't record owners without
+  authentication.
+- **Parameters** are the client's `[params]` section, shown as submitted. They are
+  supplied by the client and not verified. Anyone who can open the dashboard sees
+  them, like every reader of the scheduler, so never put secrets in them.
+- **Origin** comes from the `origin` parameter. It is shown in the task list and
+  task details, and is a link if it is an absolute HTTP(S) URL:
 
-Jolt exports these as `config.username` and `config.origin`. The dashboard consumes
-generic administration build events, but only stores and exposes these two exact
-allowlisted parameters. It never stores or exposes the raw parameter list, task
-graph, recipes or full environment. Attribution is client-supplied and unverified;
-neither username nor origin is inferred. Do not put secrets in parameters: the
-scheduler forwards **all** parameters to administration subscribers, even though
-the dashboard discards other keys.
+  ```sh
+  jolt -c params.origin="$BUILD_URL" build --network my-task
+  ```
 
-Build metadata is stored once per scheduler build ID, with status and scheduled
-time. Tasks reference it via an indexed build ID. REST `/api/v1/tasks` and websocket
-`/api/v1/tasks/events` task objects have the same representation (alongside unchanged
-task fields):
+The filter button of a build limits the task and worker views to the build, and
+a chip above them clears the filter. The build button of a task opens its build.
+
+Signed-in users can stop builds. The dashboard forwards the user's ID token to the
+scheduler, which allows owners of the build and administrators (the `admin`
+permission) to cancel it. See `JOLT_AUTH_ISSUER` below.
+
+### Event stream
+
+The frontend follows the websocket `/api/v1/events`. Its first frame is a snapshot
+of everything, `{"type":"snapshot","tasks":[...],"workers":[...],"builds":[...]}`,
+taken atomically, followed by updates `{"type":"task"|"worker"|"build","item":{...}}`
+in order for each kind. Items with the status `Deleted` (`TaskStatus` for workers)
+are removed. If the dashboard can't keep up with the scheduler, it closes the
+stream with code 1013 and the frontend reconnects for a new snapshot. The older
+per-list streams `/api/v1/tasks/events` and `/api/v1/workers/events` and the REST
+lists remain for other clients.
+
+A task carries its build:
 
 ```json
 {
@@ -85,57 +105,25 @@ task fields):
     "Id": "scheduler-build-id",
     "Status": "BUILD_ACCEPTED",
     "Scheduled": "2026-10-26 12:00:00.123",
-    "Username": "alice",
     "Origin": "https://ci.example.com/build/123",
+    "Parameters": [{ "Key": "config.origin", "Value": "https://ci.example.com/build/123" }],
+    "Owners": ["alice"],
     "Registered": true
   }
 }
 ```
 
 `Build` is `null` when no metadata is known, including with older schedulers.
-Existing historical tasks migrate with `BuildId: ""` and `Build: null`; there is
-no attribution inference or task-level attribution column. Missing build values
-are empty strings. Build status uses the protocol enum name and is independent
-of `Registered`: cancellation/completion does not itself unregister a build or
-describe individual task success/failure.
+Build status uses the protocol enum name and is independent of `Registered`:
+snapshots only list registered builds, and a build that is no longer registered
+keeps its metadata while retained tasks refer to it. Tasks are retained 48 hours
+after queueing or one hour after ending; builds that are unregistered and have no
+tasks are then removed.
 
-Snapshot builds are upserted before tasks under one shared task/build coordinator,
-with mutations and final-view selection in one transaction. Only after commit is
-each affected task broadcast once with its final reconciled state and metadata;
-SQL failures roll back so retrying cannot lose unpublished history or cancellations.
-Incremental task and build updates also select their final views transactionally,
-then publish after commit. Build updates refresh and broadcast associated task views,
-including an open details dialog. Task reads, deletion, and retention share this
-boundary so they cannot interleave snapshot phases or publish stale fanout after
-deletion. Snapshots only enumerate
-registered builds: absence or a removal event marks a build unregistered but
-keeps its metadata while retained tasks reference it. The existing task retention
-rules remain 48 hours after queueing or one hour after ending. Periodic cleanup
-deletes only unregistered builds with no remaining tasks; registered builds with
-no tasks are kept. This adds no independent long-lived build history.
-
-The task list shows compact Origin and Username columns with full values on hover.
-Use the Columns button above the grid to choose visible task columns. These choices
-(including Hide from a column menu) are remembered across page refreshes in this
-browser's local storage, separately for each dashboard origin. They do not sync
-between browsers or devices; clearing site data resets them. If storage is unavailable,
-column selection still works for the current view but cannot be saved.
-The details/log action remains available before a log exists and shows full
-attribution in a keyboard-focusable, horizontally scrollable region. Values stay
-on one line so long URLs and multiline input cannot squeeze the log pane; original
-text remains available on hover. Missing values display as empty strings. Only valid absolute
-HTTP(S) origins are clickable, using `target="_blank"` and
-`rel="noopener noreferrer"`. Other origins and all usernames (including emails
-and URL-shaped usernames) remain safely escaped text.
-
-An open details dialog keeps the task's last observed full object if deletion,
-retention, or a replacement snapshot removes its row. This includes recently
-cleared attribution and updates followed by removal in one React batch. The
-dialog shows `Task is no longer in the current list` without inventing a new task
-status, restarting log fetching, or discarding loaded output. Filtering a row
-out does not count as removal; if the row returns, its details update again and
-the notice disappears. Only the selected task is retained, not a browser-side
-task history.
+The task list shows a compact Origin column with the full value on hover. Column
+choices from the Columns button are remembered in the browser's local storage. An
+open details dialog keeps the task's last observed state if its row is removed,
+and shows `Task is no longer in the current list`.
 
 ## Configuration
 
@@ -146,10 +134,18 @@ task history.
 | `JOLT_CA_CERT` | PEM file with the certificates of the authorities that the scheduler's certificate is verified with, in addition to those of the system | |
 | `JOLT_ALLOW_INSECURE_TOKEN` | Set to `true` to send the token without TLS | `false` |
 | `PORT` | Port to serve the web application on | `8080` |
+| `JOLT_AUTH_ISSUER` | OpenID Connect provider that users sign in with to stop builds, the same one that the scheduler accepts tokens from. The Sign in button is hidden if unset | |
+| `JOLT_AUTH_CLIENT_ID` | Client that users sign in with; the scheduler must accept tokens issued to it (its `auth.oidc.audience`) | `jolt` |
 
 The token is only sent over TLS unless `JOLT_ALLOW_INSECURE_TOKEN` allows otherwise. The
-dashboard itself doesn't authenticate its users, so anyone who can reach it sees what the
+dashboard itself doesn't require users to sign in, so anyone who can reach it sees what the
 token can read from the scheduler.
+
+Users sign in in the browser with the authorization code flow and PKCE. The client must be
+public, with the standard (browser) flow enabled, the dashboard's URL as a redirect URI and its
+origin as a web origin, for example in Keycloak `https://dashboard.example.com/*` and
+`https://dashboard.example.com`. The dashboard must be served over HTTPS, or from `localhost`.
+Tokens are kept in the browser session and refreshed with the refresh token while it lasts.
 
 ## Development
 

@@ -10,13 +10,6 @@ global.TextEncoder = global.TextEncoder || NodeTextEncoder;
 
 const COLUMN_VISIBILITY_STORAGE_KEY = 'jolt-dashboard.tasks.columnVisibility.v1';
 
-// jsdom has no layout measurements, so render every cell of the real grid.
-jest.mock('@mui/x-data-grid', () => {
-    const React = require('react');
-    const grid = jest.requireActual('@mui/x-data-grid');
-    return { ...grid, DataGrid: (props) => <grid.DataGrid {...props} disableVirtualization /> };
-});
-
 beforeEach(() => {
     window.localStorage.removeItem(COLUMN_VISIBILITY_STORAGE_KEY);
 });
@@ -28,37 +21,17 @@ afterEach(() => {
     jest.useRealTimers();
 });
 
-test('the action column reserves room for both buttons instead of shrinking with flex columns', () => {
-    const tasks = new Tasks({ value: [] });
-    const actions = tasks.state.columns.find(({ field }) => field === 'actions');
-    expect(actions.flex).toBeUndefined();
-    expect(actions.width).toBeGreaterThanOrEqual(100);
-    expect(actions.minWidth).toBeGreaterThanOrEqual(100);
-});
-
-test('the grid buffers every column so Actions stays mounted across flex-width resizes', () => {
-    const tasks = new Tasks({ value: [] });
-    const grid = React.Children.toArray(tasks.render().props.children)
-        .find((child) => child.props.columns === tasks.state.columns);
-    expect(grid.props.columnBuffer).toBe(tasks.state.columns.length);
-});
-
-test.each(['chooser', 'column menu'])('hidden columns from the %s are remembered after remounting', async (control) => {
+test('hidden columns from the chooser are remembered after remounting', async () => {
     const { unmount } = render(<Tasks value={[]} />);
-    if (control === 'chooser') {
-        userEvent.click(screen.getByRole('button', { name: 'Show columns' }));
-        userEvent.click(await screen.findByRole('checkbox', { name: 'Origin' }));
-    } else {
-        userEvent.click(within(screen.getByRole('columnheader', { name: 'Origin' })).getByLabelText('Menu'));
-        userEvent.click(await screen.findByRole('menuitem', { name: 'Hide' }));
-    }
-    await waitFor(() => expect(screen.queryByRole('columnheader', { name: 'Origin' })).not.toBeInTheDocument());
+    userEvent.click(screen.getByRole('button', { name: 'Show columns' }));
+    userEvent.click(await screen.findByRole('checkbox', { name: 'Origin' }));
+    expect(screen.queryByRole('columnheader', { name: 'Origin' })).not.toBeInTheDocument();
     expect(JSON.parse(window.localStorage.getItem(COLUMN_VISIBILITY_STORAGE_KEY))).toMatchObject({ Origin: false });
     unmount();
 
     const { unmount: unmountRestored } = render(<Tasks value={[]} />);
     expect(screen.queryByRole('columnheader', { name: 'Origin' })).not.toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Username' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Name' })).toBeInTheDocument();
     userEvent.click(screen.getByRole('button', { name: 'Show columns' }));
     const originToggle = await screen.findByRole('checkbox', { name: 'Origin' });
     expect(originToggle).not.toBeChecked();
@@ -81,26 +54,26 @@ test('Hide all and Show all column choices are remembered', async () => {
     expect(screen.queryAllByRole('columnheader')).toHaveLength(0);
     userEvent.click(screen.getByRole('button', { name: 'Show columns' }));
     userEvent.click(await screen.findByRole('button', { name: 'Show all' }));
-    expect(screen.getAllByRole('columnheader')).toHaveLength(13);
+    expect(screen.getAllByRole('columnheader')).toHaveLength(12);
     unmountRestored();
 
     render(<Tasks value={[]} />);
-    expect(screen.getAllByRole('columnheader')).toHaveLength(13);
+    expect(screen.getAllByRole('columnheader')).toHaveLength(12);
 });
 
 test.each(['{invalid', 'null', '[]', 'false'])('invalid saved visibility %s falls back to visible columns', (saved) => {
     window.localStorage.setItem(COLUMN_VISIBILITY_STORAGE_KEY, saved);
     render(<Tasks value={[]} />);
-    expect(screen.getAllByRole('columnheader')).toHaveLength(13);
+    expect(screen.getAllByRole('columnheader')).toHaveLength(12);
 });
 
 test('saved visibility ignores removed columns and non-boolean values', async () => {
     window.localStorage.setItem(COLUMN_VISIBILITY_STORAGE_KEY, JSON.stringify({
-        Origin: false, Username: 'false', Name: null, RemovedColumn: false,
+        Origin: false, Name: null, RemovedColumn: false,
     }));
     render(<Tasks value={[]} />);
     expect(screen.queryByRole('columnheader', { name: 'Origin' })).not.toBeInTheDocument();
-    expect(screen.getAllByRole('columnheader')).toHaveLength(12);
+    expect(screen.getAllByRole('columnheader')).toHaveLength(11);
     userEvent.click(screen.getByRole('button', { name: 'Show columns' }));
     userEvent.click(await screen.findByRole('checkbox', { name: 'Origin' }));
     expect(JSON.parse(window.localStorage.getItem(COLUMN_VISIBILITY_STORAGE_KEY))).toEqual({ Origin: true });
@@ -111,7 +84,7 @@ test.each(['getItem', 'setItem'])('column visibility still works if storage %s f
         throw new Error('Storage unavailable');
     });
     render(<Tasks value={[]} />);
-    expect(screen.getAllByRole('columnheader')).toHaveLength(13);
+    expect(screen.getAllByRole('columnheader')).toHaveLength(12);
     userEvent.click(screen.getByRole('button', { name: 'Show columns' }));
     const originToggle = await screen.findByRole('checkbox', { name: 'Origin' });
     userEvent.click(originToggle);
@@ -122,7 +95,7 @@ test.each(['getItem', 'setItem'])('column visibility still works if storage %s f
 });
 
 test('the top-level column chooser hides and restores columns across task updates', async () => {
-    const task = { id: 'task-columns', Name: 'Build', Status: 'Queued', Build: { Origin: 'origin', Username: 'alice' } };
+    const task = { id: 'task-columns', Name: 'Build', Status: 'Queued', Build: { Origin: 'origin' } };
     const { rerender } = render(<Tasks value={[task]} updating />);
     const toolbar = screen.getByRole('toolbar', { name: 'Task controls' });
     const columnsButton = screen.getByRole('button', { name: 'Show columns' });
@@ -134,9 +107,9 @@ test('the top-level column chooser hides and restores columns across task update
     expect(originToggle).toBeChecked();
     userEvent.click(originToggle);
     expect(screen.queryByRole('columnheader', { name: 'Origin' })).not.toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Username' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Name' })).toBeInTheDocument();
 
-    rerender(<Tasks value={[{ ...task, Build: { Origin: 'new origin', Username: 'bob' } }]} updating />);
+    rerender(<Tasks value={[{ ...task, Build: { Origin: 'new origin' } }]} updating />);
     expect(screen.queryByRole('columnheader', { name: 'Origin' })).not.toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Origin' })).not.toBeChecked();
     userEvent.click(screen.getByRole('checkbox', { name: 'Origin' }));
@@ -144,30 +117,19 @@ test('the top-level column chooser hides and restores columns across task update
     expect(screen.getByText('new origin')).toBeInTheDocument();
 });
 
-test('column menus retain column-specific actions but no Show columns item', async () => {
-    render(<Tasks value={[]} />);
-    const nameColumn = screen.getByRole('columnheader', { name: 'Name' });
-    // jsdom does not apply the grid's hover styles that reveal this button.
-    userEvent.click(within(nameColumn).getByLabelText('Menu'));
-    const menu = await screen.findByRole('menu');
-    expect(within(menu).getByRole('menuitem', { name: 'Sort by ASC' })).toBeInTheDocument();
-    expect(within(menu).getByRole('menuitem', { name: 'Sort by DESC' })).toBeInTheDocument();
-    expect(within(menu).getByRole('menuitem', { name: 'Filter' })).toBeInTheDocument();
-    expect(within(menu).getByRole('menuitem', { name: 'Hide' })).toBeInTheDocument();
-    expect(within(menu).queryByRole('menuitem', { name: /show columns/i })).not.toBeInTheDocument();
-});
-
 test('task controls render above and outside the bordered grid', () => {
     render(<Tasks value={[]} updating />);
     const toolbar = screen.getByRole('toolbar', { name: 'Task controls' });
-    const grid = screen.getByRole('grid');
-    expect(grid).toHaveClass('MuiDataGrid-root');
+    const grid = screen.getByRole('table', { name: 'Tasks' });
     expect(grid).not.toContainElement(toolbar);
     expect(toolbar.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const columnsButton = screen.getByRole('button', { name: 'Show columns' });
     expect(grid).not.toContainElement(columnsButton);
     expect(columnsButton.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(within(toolbar).getAllByRole('button')).toHaveLength(7);
+    expect(within(toolbar).getAllByRole('button')).toHaveLength(8);
+    // The columns button is left of the status filters
+    const buttons = within(toolbar).getAllByRole('button');
+    expect(buttons.indexOf(columnsButton)).toBe(buttons.indexOf(within(toolbar).getByRole('button', { name: 'Queued' })) - 1);
 });
 
 test('external task controls still pause, resume, and filter', () => {
@@ -190,22 +152,21 @@ test('external task controls still pause, resume, and filter', () => {
     expect(onPlay).toHaveBeenCalledTimes(1);
 });
 
-test('the task list has compact origin and username columns with full text available', () => {
+test('the task list has a compact origin column with full text available, and no user column', () => {
     const value = 'https://ci.example.com/build/' + 'long-path/'.repeat(20);
-    const username = 'https://ci.example.com/users/' + 'long-name'.repeat(20);
-    const task = { id: 'task-1', Name: 'Build', Status: 'Queued', Log: '', Build: { Origin: value, Username: username } };
+    const task = { id: 'task-1', Name: 'Build', Status: 'Queued', Log: '', Build: { Origin: value, Owners: ['alice'] } };
     const { rerender } = render(<Tasks value={[task]} />);
 
     expect(screen.getByRole('columnheader', { name: 'Origin' })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Username' })).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Username' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Owners' })).not.toBeInTheDocument();
+    expect(screen.queryByText('alice')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: value })).toHaveAttribute('href', value);
     expect(screen.getByTitle(value)).toHaveStyle({ textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
-    expect(screen.getByTitle(username)).toHaveStyle({ textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
-    expect(screen.queryByRole('link', { name: username })).not.toBeInTheDocument();
 
     rerender(<Tasks value={[{ ...task, Build: null }]} />);
-    const grid = screen.getByRole('grid');
-    for (const field of ['Origin', 'Username']) {
+    const grid = screen.getByRole('table', { name: 'Tasks' });
+    for (const field of ['Origin']) {
         const cell = within(grid).getAllByRole('cell').find((cell) => cell.getAttribute('data-field') === field);
         expect(cell).toBeInTheDocument();
         expect(cell.textContent).toBe('');
@@ -216,7 +177,7 @@ test('the task list has compact origin and username columns with full text avail
 test.each(['Queued', 'Assigned', 'Cancelled'])('a %s task with no log can open details showing full attribution', async (status) => {
     global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 404 }));
     const value = 'https://ci.example.com/build/' + 'long-path/'.repeat(20);
-    const task = { id: 'task-no-log', Name: 'Build', Status: status, Log: '', Build: { Origin: value, Username: 'builder@example.com' } };
+    const task = { id: 'task-no-log', Name: 'Build', Status: status, Log: '', Build: { Origin: value } };
     const { rerender } = render(<Tasks value={[task]} />);
 
     const action = screen.getByRole('button', { name: 'View details and log for Build' });
@@ -225,9 +186,7 @@ test.each(['Queued', 'Assigned', 'Cancelled'])('a %s task with no log can open d
 
     const dialog = await screen.findByRole('dialog', { name: 'Build' });
     expect(within(dialog).getByText('Origin')).toBeInTheDocument();
-    expect(within(dialog).getByText('Username')).toBeInTheDocument();
-    expect(within(dialog).getByText('builder@example.com')).toBeInTheDocument();
-    expect(within(dialog).queryByRole('link', { name: 'builder@example.com' })).not.toBeInTheDocument();
+    expect(within(dialog).queryByText('Username')).not.toBeInTheDocument();
     expect(within(dialog).getByRole('link', { name: value })).toHaveAttribute('href', value);
     const field = within(dialog).getByTitle(value);
     expect(field.textContent).toBe(value);
@@ -240,9 +199,8 @@ test.each(['Queued', 'Assigned', 'Cancelled'])('a %s task with no log can open d
         '/api/v1/tasks/task-no-log/log' + (status === 'Cancelled' ? '' : '?follow=1'),
         expect.objectContaining({ signal: expect.anything() }),
     ));
-    rerender(<Tasks value={[{ ...task, Build: { Origin: 'updated origin', Username: 'updated username' } }]} />);
+    rerender(<Tasks value={[{ ...task, Build: { Origin: 'updated origin' } }]} />);
     expect(within(dialog).getByText('updated origin')).toBeInTheDocument();
-    expect(within(dialog).getByText('updated username')).toBeInTheDocument();
     expect(within(dialog).queryByRole('link', { name: value })).not.toBeInTheDocument();
     expect(fetch).toHaveBeenCalledTimes(1);
 });
@@ -267,11 +225,11 @@ test('a removed task keeps its last observed details and loaded log without rest
     const initial = {
         id: 'removed-task', Name: 'Build', Status: 'Passed', Log: 'log-url',
         Started: '2026-10-27 10:00:00', Ended: '2026-10-27 10:01:00',
-        Build: { Origin: 'opening origin', Username: 'opening user' },
+        Build: { Origin: 'opening origin' },
     };
     const updated = {
         ...initial, Status: 'Failed', Started: '2026-10-27 11:00:00', Ended: '2026-10-27 11:01:00',
-        Build: { Origin: 'latest origin', Username: 'latest user' },
+        Build: { Origin: 'latest origin' },
     };
     const { rerender } = render(<Tasks value={[initial]} />);
     userEvent.click(screen.getByRole('button', { name: 'View details and log for Build' }));
@@ -283,7 +241,6 @@ test('a removed task keeps its last observed details and loaded log without rest
     rerender(<Tasks value={[]} />);
 
     expect(within(dialog).getByText('latest origin')).toBeInTheDocument();
-    expect(within(dialog).getByText('latest user')).toBeInTheDocument();
     expect(within(dialog).getByText('Failed')).toBeInTheDocument();
     expect(within(dialog).getByText(updated.Started)).toBeInTheDocument();
     expect(within(dialog).getByText(updated.Ended)).toBeInTheDocument();
@@ -302,7 +259,7 @@ test('removal during pending log streaming preserves buffered chunks and accepts
     global.fetch = jest.fn(() => Promise.resolve({ ok: true, status: 200, body: { getReader: () => reader } }));
     const initial = {
         id: 'streaming-task', Name: 'Build', Status: 'Running',
-        Build: { Origin: 'opening origin', Username: 'alice' },
+        Build: { Origin: 'opening origin' },
     };
     const { rerender } = render(<Tasks value={[initial]} />);
     userEvent.click(screen.getByRole('button', { name: 'View details and log for Build' }));
@@ -321,7 +278,7 @@ test('removal during pending log streaming preserves buffered chunks and accepts
     expect(reader.read).toHaveBeenCalledTimes(3);
     expect(within(dialog).queryByText('before removal one')).not.toBeInTheDocument();
     expect(within(dialog).queryByText('before removal two')).not.toBeInTheDocument();
-    rerender(<Tasks value={[{ ...initial, Build: { Origin: 'latest origin', Username: 'bob' } }]} />);
+    rerender(<Tasks value={[{ ...initial, Build: { Origin: 'latest origin' } }]} />);
     rerender(<Tasks value={[]} />);
     expect(within(dialog).getByRole('status')).toBeInTheDocument();
     expect(within(dialog).getByText('latest origin')).toBeInTheDocument();
@@ -348,38 +305,38 @@ test('removal during pending log streaming preserves buffered chunks and accepts
     expect(screen.getByRole('dialog', { name: 'Build' })).toBe(dialog);
 });
 
-test.each([null, { Origin: '', Username: '' }])('cleared attribution is retained after removal: %s', async (build) => {
+test.each([null, { Origin: '' }])('cleared attribution is retained after removal: %s', async (build) => {
     global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 404 }));
-    const initial = { id: 'cleared-task', Name: 'Build', Status: 'Passed', Build: { Origin: 'opening origin', Username: 'opening user' } };
+    const initial = { id: 'cleared-task', Name: 'Build', Status: 'Passed', Build: { Origin: 'opening origin' } };
     const { rerender } = render(<Tasks value={[initial]} />);
     userEvent.click(screen.getByRole('button', { name: 'View details and log for Build' }));
     await screen.findByText('No log output.');
     rerender(<Tasks value={[{ ...initial, Build: build }]} />);
     rerender(<Tasks value={[]} />);
     const dialog = screen.getByRole('dialog', { name: 'Build' });
-    expect(within(dialog).getByRole('region', { name: 'Build attribution' }).textContent).toBe('OriginUsername');
+    expect(within(dialog).getByRole('region', { name: 'Build attribution' }).textContent).toBe('Origin');
     expect(within(dialog).queryByText('opening origin')).not.toBeInTheDocument();
-    expect(within(dialog).queryByText('opening user')).not.toBeInTheDocument();
 });
 
 test('filtering does not mark the open task removed, and a returning row updates it again', async () => {
     global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 404 }));
-    const initial = { id: 'filtered-task', Name: 'Build', Status: 'Passed', Build: { Origin: 'original origin', Username: 'alice' } };
+    const initial = { id: 'filtered-task', Name: 'Build', Status: 'Passed', Build: { Origin: 'original origin' } };
     const tasks = React.createRef();
     const { rerender } = render(<Tasks ref={tasks} value={[initial]} />);
     userEvent.click(screen.getByRole('button', { name: 'View details and log for Build' }));
     await screen.findByText('No log output.');
     const dialog = screen.getByRole('dialog', { name: 'Build' });
-    act(() => { tasks.current.setFilters(['Running']); });
-    const updated = { ...initial, Build: { Origin: 'filtered update', Username: 'bob' } };
+    // Hide passed tasks
+    userEvent.click(screen.getByRole('button', { name: 'Passed', hidden: true }));
+    const updated = { ...initial, Build: { Origin: 'filtered update' } };
     rerender(<Tasks ref={tasks} value={[updated]} />);
     expect(within(dialog).getByText('filtered update')).toBeInTheDocument();
     expect(within(dialog).queryByRole('status')).not.toBeInTheDocument();
-    expect(within(screen.getByRole('grid', { hidden: true })).queryByRole('button', { name: 'View details and log for Build', hidden: true })).not.toBeInTheDocument();
+    expect(within(screen.getByRole('table', { name: 'Tasks', hidden: true })).queryByRole('button', { name: 'View details and log for Build', hidden: true })).not.toBeInTheDocument();
     rerender(<Tasks ref={tasks} value={[]} />);
     expect(within(dialog).getByText('filtered update')).toBeInTheDocument();
     expect(within(dialog).getByRole('status')).toBeInTheDocument();
-    rerender(<Tasks ref={tasks} value={[{ ...updated, Build: { Origin: 'returned origin', Username: 'carol' } }]} />);
+    rerender(<Tasks ref={tasks} value={[{ ...updated, Build: { Origin: 'returned origin' } }]} />);
     expect(within(dialog).getByText('returned origin')).toBeInTheDocument();
     expect(within(dialog).queryByRole('status')).not.toBeInTheDocument();
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
@@ -387,8 +344,8 @@ test('filtering does not mark the open task removed, and a returning row updates
 
 test('opening a different task starts a new last-observed fallback', async () => {
     global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 404 }));
-    const first = { id: 'first-task', Name: 'First', Status: 'Passed', Build: { Origin: 'first origin', Username: 'alice' } };
-    const second = { id: 'second-task', Name: 'Second', Status: 'Passed', Build: { Origin: 'second origin', Username: 'bob' } };
+    const first = { id: 'first-task', Name: 'First', Status: 'Passed', Build: { Origin: 'first origin' } };
+    const second = { id: 'second-task', Name: 'Second', Status: 'Passed', Build: { Origin: 'second origin' } };
     const { rerender } = render(<Tasks value={[first, second]} />);
     userEvent.click(screen.getByRole('button', { name: 'View details and log for First' }));
     await screen.findByText('No log output.');
@@ -402,4 +359,29 @@ test('opening a different task starts a new last-observed fallback', async () =>
     expect(within(dialog).getByText('second origin')).toBeInTheDocument();
     expect(within(dialog).queryByText('first origin')).not.toBeInTheDocument();
     expect(within(dialog).getByRole('status')).toBeInTheDocument();
+});
+
+test('tasks are found by searching and filtered by the text of their columns', async () => {
+    const tasks = [
+        { id: 'compile', Name: 'Compile', Identity: 'abc', Worker: 'worker-1', Status: 'Passed', BuildId: 'build-1', Build: { Origin: 'https://ci.example.com/1' } },
+        { id: 'link', Name: 'Link', Identity: 'def', Worker: 'worker-2', Status: 'Running', BuildId: 'build-2' },
+    ];
+    render(<Tasks value={tasks} />);
+    const names = () => screen.queryAllByRole('cell').filter((cell) => cell.getAttribute('data-field') === 'Name')
+        .map((cell) => cell.textContent).sort();
+    expect(names()).toEqual(['Compile', 'Link']);
+
+    const search = screen.getByRole('textbox', { name: 'Search tasks' });
+    userEvent.type(search, 'ci.example');
+    expect(names()).toEqual(['Compile']);
+    userEvent.clear(search);
+    userEvent.type(search, 'build-2');
+    expect(names()).toEqual(['Link']);
+    userEvent.clear(search);
+
+    userEvent.click(screen.getByRole('button', { name: 'Filter Worker' }));
+    userEvent.type(await screen.findByRole('textbox', { name: 'Filter Worker' }), '-1');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Filter Worker', hidden: true })).toHaveAttribute('aria-pressed', 'true'));
+    userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(names()).toEqual(['Compile']));
 });

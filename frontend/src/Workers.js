@@ -1,38 +1,34 @@
 import React from 'react';
-import { DataGrid } from '@mui/x-data-grid';
+import DataTable from './DataTable';
 import LogButton from './LogButton';
 import TaskLog from "./TaskLog"
+
+const COLUMN_VISIBILITY_STORAGE_KEY = 'jolt-dashboard.workers.columnVisibility.v1';
 
 
 class Workers extends React.Component {
     constructor(props) {
         super(props);
         this.state = {
-            columns: [
-                { field: 'Hostname', headerName: 'Worker', flex: 2 },
-                { field: 'Labels', headerName: 'Labels', flex: 2 },
-                { field: 'TaskName', headerName: 'Task', flex: 4 },
-                { field: 'TaskStatus', headerName: 'Status', flex: 1 },
-                { field: 'Enlisted', headerName: 'Enlisted', flex: 2 },
-                {
-                    field: "actions",
-                    headerName: "Actions",
-                    type: "actions",
-                    sortable: false,
-                    flex: 1,
-                    disableClickEventBubbling: true,
-                    renderCell: (params) => {
-                        return (
-                            <div>
-                                <LogButton onClick={() => this.onLogClick(params.row)} disabled={params.row["TaskLog"] === ""} />
-                            </div>
-                        );
-                    }
-                },
-            ],
             logOpen: false,
             logTask: { "id": "", "Name": "" },
         };
+    }
+
+    columns() {
+        return [
+            { key: 'Hostname', label: 'Worker' },
+            { key: 'Labels', label: 'Labels' },
+            { key: 'TaskName', label: 'Task' },
+            { key: 'TaskStatus', label: 'Status' },
+            { key: 'Enlisted', label: 'Enlisted', sx: { whiteSpace: 'nowrap' } },
+            {
+                key: 'actions', label: 'Actions', sortable: false, filterable: false, sx: { py: 0 },
+                render: (worker) => (
+                    <LogButton onClick={() => this.onLogClick(worker)} disabled={worker["TaskLog"] === ""} />
+                ),
+            },
+        ];
     }
 
     onLogClick(worker) {
@@ -52,17 +48,19 @@ class Workers extends React.Component {
                     task={this.state.logTask}
                 />
 
-                <DataGrid
-                    autoHeight
-                    initialState={{
-                        sorting: {
-                            sortModel: [{ field: 'Hostname', sort: 'asc' }],
-                        },
-                    }}
-                    rowHeight={40}
-                    width="100%"
+                <DataTable
+                    label="Workers"
+                    rowLabel="worker"
+                    controlsLabel="Worker controls"
                     rows={this.props.value}
-                    columns={this.state.columns} />
+                    columns={this.columns()}
+                    getId={(worker) => worker.id}
+                    defaultSort={{ key: 'Hostname', order: 'asc' }}
+                    storageKey={COLUMN_VISIBILITY_STORAGE_KEY}
+                    searchLabel="Search workers"
+                    searchPlaceholder="Worker, label or task"
+                    searchTexts={(worker) => [worker.Hostname, worker.Labels, worker.TaskName]}
+                />
             </div>
         )
     }

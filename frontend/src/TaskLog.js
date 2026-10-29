@@ -410,7 +410,6 @@ class TaskLog extends React.Component {
                     sx={{ minWidth: 0, flexShrink: 0, overflowX: 'auto' }}
                 >
                     <ListItemText primary={<Attribution value={this.props.task.Build?.Origin} />} secondary="Origin" />
-                    <ListItemText primary={<Attribution value={this.props.task.Build?.Username} textOnly />} secondary="Username" />
                 </Box>
                 {this.props.removed && (
                     <Box role="status" marginLeft={3} marginRight={3} marginBottom={1} sx={{ flexShrink: 0 }}>

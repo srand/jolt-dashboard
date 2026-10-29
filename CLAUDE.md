@@ -46,30 +46,40 @@ scheduler --gRPC StreamEvents--> scheduler.Client --> model.TaskService/WorkerSe
                                                               |
                                                        model.Broadcast
                                                               |
-                                  /api/v1/{tasks,workers}/events websocket --> App.state --> render
+                                       /api/v1/events websocket --> App.state --> render
 ```
 
 - **The scheduler is the source of truth.** Every reconnect delivers a full snapshot, which is
   reconciled against the database; anything the dashboard believed was in progress but that is
   absent from the snapshot was lost while disconnected and is terminated. This is why the dashboard
   cannot drift, and why reconciliation logic belongs in `scheduler/client.go`, not in the API layer.
-- **Tasks and workers have separate `Broadcast` instances** (wired in `main.go`) so the task
-  websocket only ever carries tasks. `Subscribe()` registers a consumer and captures detached rows
-  under the service's database-owned mutation/publication coordinator. Each websocket's first DATA
-  frame is `{"type":"snapshot","items":[...]}` (empty lists use `[]`), then raw task/worker updates
-  with existing `Deleted` markers. The snapshot is separate from the incremental queue; JSON and
-  socket writes must remain outside mutation locks. Task and worker snapshots are independently
-  consistent, not a global cross-stream transaction. Deploy backend/frontend together for this
-  snapshot-first wire contract; REST list endpoints remain unchanged for other clients.
+- **Tasks, workers and builds have separate `Broadcast` instances** (`TaskService.Broadcast`,
+  `WorkerService.Broadcast`, `BuildService.Updates`). `model.Subscribe` registers a consumer on all
+  three and takes their snapshots together, holding the task coordinator (which also guards builds)
+  and then the worker coordinator, so the combined snapshot is consistent. The `/api/v1/events`
+  websocket's first DATA frame is `{"type":"snapshot","tasks":[...],"workers":[...],"builds":[...]}`
+  (empty lists use `[]`), then `{"type":"task"|"worker"|"build","item":{...}}` updates with the
+  existing `Deleted` markers (`Status`, or `TaskStatus` for workers). `Subscription.Events` merges
+  the three queues into one unbuffered channel, so a slow browser still backs up into the queues
+  that detect it. Build changes publish both the affected task views and the build itself, after
+  commit. JSON and socket writes must remain outside mutation locks. The older per-list streams
+  `/api/v1/{tasks,workers}/events` (first frame `{"type":"snapshot","items":[...]}`) and the REST
+  lists remain for other clients; deploy backend and frontend together.
   `Broadcast.Send` never waits for subscriber capacity: a full
   10-event queue evicts that client and signals `Overflow()`. The shared API websocket handler
   attempts close code `1013`, then closes the socket even if the data writer is blocked. With live
-  updates enabled, `App` promptly replaces both sockets for fresh snapshots on `1013`;
+  updates enabled, `App` promptly replaces the socket for a fresh snapshot on `1013`;
   other closes retain a ten-second delay. Reconnects coalesce and are cancelled on pause/unmount.
-  Initial load, reconnect, and resume use only the ordered websocket streams, never competing REST
-  list requests. Old lists stay visible until replacement snapshots arrive; stale socket callbacks
+  Initial load, reconnect, and resume use only the websocket stream, never competing REST
+  list requests. Old lists stay visible until the replacement snapshot arrives; stale socket callbacks
   are ignored, and invalid/pre-snapshot frames trigger ordinary reconnect recovery.
   A slow browser must never stall the scheduler stream.
+- **Stopping builds:** `POST /api/v1/builds/{id}/cancel` forwards the user's bearer ID token to the
+  scheduler's `CancelBuild` on a short-lived connection; the scheduler decides (owners and admins).
+  The frontend signs in with authorization code + PKCE (`frontend/src/auth.js`), configured by
+  `GET /api/v1/auth`. App fetches it once on load to decide whether to offer signing in; it is the
+  only REST request of the initial load, and not a list request, so it can't race the snapshot.
+  `App.test.js` mocks `auth.loadConfig`, so its fetch assertions keep covering list and log requests.
 - **SQLite is a single writer**: the pool is pinned to one connection with WAL and `busy_timeout`
   (`model/database.go`). Don't introduce concurrent writers or a second pool.
 - **Timestamps cross the wire as preformatted local-time strings** (`"2006-01-02 15:04:05.999"`,
@@ -91,7 +101,11 @@ scheduler --gRPC StreamEvents--> scheduler.Client --> model.TaskService/WorkerSe
 ### Frontend
 
 Class components throughout, no hooks. `App` owns the lists (`tasks`, `workers`), `updating`, and
-one `selectedTask` full view, and passes them down; `Tasks`/`Workers` wrap MUI's `DataGrid`.
+one `selectedTask` full view, and passes them down. `Builds`, `Tasks` and `Workers` all use
+`DataTable`, an MUI `Table` with a search field, status buttons, a Columns chooser remembered in
+local storage, sortable and filterable headers (`ColumnFilter.js`), pages, and optional expandable
+rows, which the free MUI `DataGrid` doesn't have. Build rows and their task statistics are derived
+in `render` by `buildStats.js`.
 Task event reducers refresh the selected view before removal can hide an intermediate update in
 React's batching. `Tasks` also retains the last observed row for standalone use. An open details
 dialog keeps this full object (including cleared attribution) after removal, displays

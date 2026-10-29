@@ -106,30 +106,27 @@ afterEach(() => {
 
 test('task details show full attribution and update it with build metadata', () => {
     const value = 'https://ci.example.com/build/' + 'long-path/'.repeat(20);
-    const task = { id: 'details-1', Status: 'Passed', Name: 'Build', Build: { Origin: value, Username: 'https://ci.example.com/user' } };
+    const task = { id: 'details-1', Status: 'Passed', Name: 'Build', Build: { Origin: value } };
     const { rerender } = render(<TaskLog open={true} task={task} onClose={() => {}} />);
 
     expect(screen.getByText('Origin')).toBeInTheDocument();
-    expect(screen.getByText('Username')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: task.Build.Username })).not.toBeInTheDocument();
+    expect(screen.queryByText('Username')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: value })).toHaveAttribute('href', value);
     expect(screen.getByTitle(value)).not.toHaveStyle({ textOverflow: 'ellipsis' });
 
-    rerender(<TaskLog open={true} task={{ ...task, Build: { Origin: 'builder@example.com', Username: 'updated user' } }} onClose={() => {}} />);
+    rerender(<TaskLog open={true} task={{ ...task, Build: { Origin: 'builder@example.com' } }} onClose={() => {}} />);
     expect(screen.getByText('builder@example.com')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: value })).not.toBeInTheDocument();
-    expect(screen.getByText('updated user')).toBeInTheDocument();
 
     rerender(<TaskLog open={true} task={{ ...task, Build: null }} onClose={() => {}} />);
-    expect(screen.getByRole('region', { name: 'Build attribution' }).textContent).toBe('OriginUsername');
+    expect(screen.getByRole('region', { name: 'Build attribution' }).textContent).toBe('Origin');
 });
 
 test.each([
-    { name: 'long URL', origin: 'https://ci.example.com/build/' + 'long-path/'.repeat(300), username: 'alice' },
-    { name: 'multiline origin', origin: Array.from({ length: 50 }, (_, i) => 'origin line ' + i).join('\n'), username: 'alice' },
-    { name: 'long username', origin: 'manual build', username: 'u'.repeat(2048) },
-])('$name uses a keyboard-scrollable horizontal region rather than wrapping', ({ origin, username }) => {
-    const task = { id: 'long-attribution', Status: 'Passed', Name: 'Build', Build: { Origin: origin, Username: username } };
+    { name: 'long URL', origin: 'https://ci.example.com/build/' + 'long-path/'.repeat(300) },
+    { name: 'multiline origin', origin: Array.from({ length: 50 }, (_, i) => 'origin line ' + i).join('\n') },
+])('$name uses a keyboard-scrollable horizontal region rather than wrapping', ({ origin }) => {
+    const task = { id: 'long-attribution', Status: 'Passed', Name: 'Build', Build: { Origin: origin } };
     render(<TaskLog open={true} task={task} onClose={() => {}} />);
 
     const region = screen.getByRole('region', { name: 'Build attribution' });
@@ -140,10 +137,6 @@ test.each([
     expect(value.textContent).toBe(origin);
     expect(value).toHaveStyle({ whiteSpace: 'nowrap' });
     expect(value).not.toHaveStyle({ textOverflow: 'ellipsis' });
-    const user = screen.getByTitle(username);
-    expect(region).toContainElement(user);
-    expect(user.textContent).toBe(username);
-    expect(user).toHaveStyle({ whiteSpace: 'nowrap' });
 });
 
 test('a running task is fetched with follow=1', async () => {
