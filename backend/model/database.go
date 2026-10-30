@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"gorm.io/driver/sqlite"
@@ -13,6 +14,10 @@ const sqliteBusyTimeout = 5 * time.Second
 
 type Database struct {
 	db *gorm.DB
+	// Task/build mutations and publication share a boundary, including snapshots.
+	taskCoordinator sync.Mutex
+	// Worker mutation, snapshot reads, and publication use the same boundary.
+	workerCoordinator sync.Mutex
 }
 
 func NewDatabase() *Database {
@@ -45,6 +50,14 @@ func NewDatabaseFromDsn(dsn string) *Database {
 	}
 
 	return &Database{db: db}
+}
+
+func (db *Database) Close() error {
+	sqlDB, err := db.db.DB()
+	if err != nil {
+		return err
+	}
+	return sqlDB.Close()
 }
 
 func (db *Database) Create(obj interface{}) error {

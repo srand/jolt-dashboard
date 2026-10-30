@@ -9,11 +9,23 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+func newTestDatabase(t *testing.T) *Database {
+	t.Helper()
+	db := NewDatabaseFromDsn("file:" + uuid.NewString() + "?mode=memory&cache=shared")
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	return db
+}
+
 func newTestServices(t *testing.T) (*TaskService, *WorkerService) {
 	t.Helper()
 
-	db := NewDatabaseFromDsn("file:" + t.Name() + "?mode=memory&cache=shared")
+	db := newTestDatabase(t)
 	tasks := &TaskService{Db: db, Broadcast: NewBroadcast()}
+	tasks.Builds = NewBuildService(db, tasks.Broadcast)
 	if err := db.AutoMigrate(&Task{}); err != nil {
 		t.Fatal(err)
 	}
@@ -30,6 +42,44 @@ func newTaskInfo(name string, status protocol.TaskStatus) *protocol.TaskInfo {
 		Name:     name,
 		Status:   status,
 		QueuedAt: timestamppb.New(time.Now()),
+	}
+}
+
+func TestTaskBuildAssociationMigratesExistingRows(t *testing.T) {
+	db := newTestDatabase(t)
+	// Existing task history must remain readable without inferred attribution.
+	if err := db.db.Exec(`CREATE TABLE tasks (
+		instance text PRIMARY KEY, name text, identity text, routing_key text,
+		worker text, status text, queued text, assigned text, started text,
+		ended text, log text
+	)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	instance := uuid.New()
+	if err := db.db.Exec("INSERT INTO tasks (instance, name, status, log) VALUES (?, ?, ?, ?)", instance, "existing task", "Passed", "https://logs.example/task").Error; err != nil {
+		t.Fatal(err)
+	}
+	tasks := &TaskService{Db: db, Broadcast: NewBroadcast()}
+	tasks.Builds = NewBuildService(db, tasks.Broadcast)
+	if err := db.db.AutoMigrate(&Task{}); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := tasks.GetTask(instance)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Name != "existing task" || stored.BuildID != "" || stored.Build != nil || stored.Status != "Passed" || stored.Log != "https://logs.example/task" {
+		t.Fatalf("migrated task = %+v, want unchanged history with no build", stored)
+	}
+	var emptyRows int64
+	if err := db.db.Model(&Task{}).Where("build_id = ''").Count(&emptyRows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if emptyRows != 1 {
+		t.Errorf("rows with empty build ID = %d, want 1 (not NULL)", emptyRows)
+	}
+	if db.db.Migrator().HasColumn(&Task{}, "provenance") || !db.db.Migrator().HasIndex(&Task{}, "BuildID") {
+		t.Fatal("expected indexed build ID and no task-level provenance column")
 	}
 }
 
@@ -117,6 +167,32 @@ func TestApplyTaskInfoPreservesAssignedTimestamp(t *testing.T) {
 	}
 }
 
+func TestApplyTaskInfoPreservesLogThroughQueueAndCancellation(t *testing.T) {
+	tasks, _ := newTestServices(t)
+	info := newTaskInfo("build/lib", protocol.TaskStatus_TASK_RUNNING)
+	info.Log = "https://logs.example/task"
+	if err := tasks.Builds.Upsert(buildInfo(info.BuildId)); err != nil {
+		t.Fatal(err)
+	}
+	if err := tasks.ApplyTaskInfo(info); err != nil {
+		t.Fatal(err)
+	}
+	info.Log = ""
+	for _, status := range []protocol.TaskStatus{protocol.TaskStatus_TASK_QUEUED, protocol.TaskStatus_TASK_CANCELLED} {
+		info.Status = status
+		if err := tasks.ApplyTaskInfo(info); err != nil {
+			t.Fatal(err)
+		}
+		view, err := tasks.GetTask(uuid.MustParse(info.Instance))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if view.Log != "https://logs.example/task" || view.Build == nil || view.BuildID != info.BuildId {
+			t.Fatalf("log or association lost on %v: %+v", status, view)
+		}
+	}
+}
+
 // A task the dashboard still believes is in progress but that the scheduler no
 // longer knows about was lost while disconnected and must not linger forever.
 func TestApplySnapshotTerminatesLostTasks(t *testing.T) {
@@ -152,6 +228,9 @@ func TestApplySnapshotTerminatesLostTasks(t *testing.T) {
 		if stored.Ended == "" {
 			t.Errorf("%s has no end time", info.Name)
 		}
+		if stored.BuildID != info.BuildId {
+			t.Errorf("%s lost build ID during reconciliation", info.Name)
+		}
 	}
 
 	stored, err := tasks.GetTask(uuid.MustParse(completed.Instance))
@@ -161,6 +240,9 @@ func TestApplySnapshotTerminatesLostTasks(t *testing.T) {
 	if stored.Status != "Passed" {
 		t.Errorf("completed task was rewritten to %q", stored.Status)
 	}
+	if stored.BuildID != completed.BuildId {
+		t.Error("completed task lost build ID during reconciliation")
+	}
 
 	stored, err = tasks.GetTask(uuid.MustParse(survivor.Instance))
 	if err != nil {
@@ -168,6 +250,9 @@ func TestApplySnapshotTerminatesLostTasks(t *testing.T) {
 	}
 	if stored.Status != "Queued" {
 		t.Errorf("survivor status = %q, want Queued", stored.Status)
+	}
+	if stored.BuildID != survivor.BuildId {
+		t.Errorf("survivor build ID = %q, want snapshot value %q", stored.BuildID, survivor.BuildId)
 	}
 
 	// Every change must reach the websocket clients.

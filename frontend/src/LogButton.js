@@ -3,11 +3,13 @@ import FormControlLabel from "@mui/material/FormControlLabel";
 import IconButton from "@mui/material/IconButton";
 
 
-const LogButton = ({ onClick, disabled }) => {
+const LogButton = ({ onClick, disabled, label = 'View log' }) => {
     return (
-        <FormControlLabel disabled={disabled}
+        <FormControlLabel
+            sx={{ ml: 0, mr: 0 }}
+            disabled={disabled}
             control={
-                <IconButton onClick={onClick}>
+                <IconButton onClick={onClick} aria-label={label}>
                     <ArticleIcon />
                 </IconButton>
             }

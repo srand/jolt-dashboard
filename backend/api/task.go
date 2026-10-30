@@ -8,10 +8,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"time"
 
 	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
 	"github.com/srand/jolt-dashboard/model"
 )
 
@@ -56,50 +54,7 @@ func (api *TaskApi) GetTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *TaskApi) GetTaskEvents(w http.ResponseWriter, r *http.Request) {
-	upgrader := websocket.Upgrader{}
-	ws, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		// The upgrader has already sent an error response.
-		fmt.Printf("failed to upgrade to websocket: %v\n", err)
-		return
-	}
-	defer ws.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	consumer := api.service.Broadcast.NewClient()
-	defer consumer.Close()
-
-	go func(ctx context.Context) {
-		for {
-			select {
-			case task := <-consumer.Chan:
-				err := ws.SetWriteDeadline(time.Now().Add(30 * time.Second))
-				if err != nil {
-					ws.Close()
-					return
-				}
-
-				err = ws.WriteJSON(task)
-				if err != nil {
-					ws.Close()
-					return
-				}
-			case <-ctx.Done():
-				return
-			}
-		}
-	}(ctx)
-
-	for {
-		_, _, err = ws.ReadMessage()
-		if err != nil {
-			fmt.Println(err)
-			break
-		}
-	}
-
-	cancel()
+	getEvents(w, r, api.service.Subscribe)
 }
 
 func (api *TaskApi) DeleteTask(w http.ResponseWriter, r *http.Request) {
