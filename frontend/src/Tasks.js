@@ -3,7 +3,6 @@ import React from 'react';
 import BuildButton from './BuildButton';
 import DataTable from './DataTable';
 import LogButton from './LogButton';
-import Attribution from './Attribution';
 import PauseButton from './PauseButton';
 import TaskLog from "./TaskLog"
 
@@ -65,10 +64,6 @@ class Tasks extends React.Component {
       { key: 'Worker', label: 'Worker', flex: 2 },
       { key: 'Name', label: 'Name', flex: 4 },
       { key: 'Identity', label: 'Identity', flex: 2 },
-      {
-        key: 'Origin', label: 'Origin', value: (task) => task.Build?.Origin || '',
-        render: (task) => <Attribution value={task.Build?.Origin || ''} compact />, flex: 1,
-      },
       { key: 'Queued', label: 'Queued' },
       { key: 'Assigned', label: 'Assigned' },
       { key: 'Started', label: 'Started' },
