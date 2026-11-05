@@ -341,9 +341,14 @@ class App extends React.Component {
     const { buildFilter } = this.state;
     const tasks = buildFilter ? this.state.tasks.filter((task) => task.BuildId === buildFilter) : this.state.tasks;
     const taskInstances = new Set(tasks.map((task) => task.id));
-    const workers = buildFilter
+    const visibleWorkers = buildFilter
       ? this.state.workers.filter((worker) => taskInstances.has(worker.TaskInstance))
       : this.state.workers;
+    const tasksById = new Map(this.state.tasks.map((task) => [task.id, task]));
+    const workers = visibleWorkers.map((worker) => ({
+      ...worker,
+      BuildId: tasksById.get(worker.TaskInstance)?.BuildId || '',
+    }));
     const filterChip = buildFilter && (
       <div className="w3-container w3-margin-top">
         <Chip
@@ -425,7 +430,7 @@ class App extends React.Component {
           </TabPanel>
           <TabPanel value={this.state.menuItem} index={TAB_WORKERS}>
             {filterChip}
-            <Workers value={workers} />
+            <Workers value={workers} onBuildClick={(worker) => this.showBuild(worker.BuildId)} />
           </TabPanel>
           <Dialog open={this.state.stopBuild !== null} onClose={() => this.setState({ stopBuild: null })}>
             <DialogTitle>Stop the build?</DialogTitle>

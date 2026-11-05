@@ -1,4 +1,5 @@
 import React from 'react';
+import BuildButton from './BuildButton';
 import DataTable from './DataTable';
 import LogButton from './LogButton';
 import TaskLog from "./TaskLog"
@@ -25,7 +26,14 @@ class Workers extends React.Component {
             {
                 key: 'actions', label: 'Actions', sortable: false, filterable: false, sx: { py: 0 },
                 render: (worker) => (
-                    <LogButton onClick={() => this.onLogClick(worker)} disabled={worker["TaskLog"] === ""} />
+                    <div style={{ display: 'flex' }}>
+                        <LogButton onClick={() => this.onLogClick(worker)} disabled={worker["TaskLog"] === ""} />
+                        <BuildButton
+                            onClick={() => this.props.onBuildClick?.(worker)}
+                            disabled={!worker.BuildId}
+                            label={`Show the build of ${worker.TaskName || worker.Hostname}`}
+                        />
+                    </div>
                 ),
             },
         ];

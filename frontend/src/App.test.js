@@ -788,6 +788,20 @@ test('the build button of a task shows its build, expanded', () => {
     expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument();
 });
 
+test('the build button of a worker shows its task build', () => {
+    const app = React.createRef();
+    render(<App ref={app} />);
+    snapshot(BUILD_TASKS, WORKERS, 0, [BUILD]);
+    userEvent.click(screen.getByRole('tab', { name: 'Workers' }));
+
+    expect(screen.getByRole('button', { name: 'Show the build of idle worker' })).toBeDisabled();
+    userEvent.click(screen.getByRole('button', { name: 'Show the build of Link' }));
+
+    expect(screen.getByRole('tab', { name: 'Builds' })).toHaveAttribute('aria-selected', 'true');
+    expect(app.current.state.expandedBuilds).toEqual([BUILD.id]);
+    expect(screen.getByRole('table', { name: 'Build parameters' })).toBeInTheDocument();
+});
+
 test('the build button of a task shows its build also when the build has ended', () => {
     const completed = { ...BUILD, Status: 'BUILD_COMPLETED' };
     render(<App />);
