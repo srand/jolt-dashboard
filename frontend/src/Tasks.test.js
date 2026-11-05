@@ -163,7 +163,14 @@ test('the task list omits attribution and user columns', () => {
     expect(screen.queryByText(value)).not.toBeInTheDocument();
 });
 
-test.each(['Queued', 'Assigned', 'Cancelled'])('a %s task with no log can open details showing full attribution', async (status) => {
+test('an assigned task has its log button disabled', () => {
+    const task = { id: 'task-assigned', Name: 'Build', Status: 'Assigned', Log: '' };
+    render(<Tasks value={[task]} />);
+
+    expect(screen.getByRole('button', { name: 'View details and log for Build' })).toBeDisabled();
+});
+
+test.each(['Queued', 'Cancelled'])('a %s task with no log can open details showing full attribution', async (status) => {
     global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 404 }));
     const value = 'https://ci.example.com/build/' + 'long-path/'.repeat(20);
     const task = { id: 'task-no-log', Name: 'Build', Status: status, Log: '', Build: { Origin: value } };

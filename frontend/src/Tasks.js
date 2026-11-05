@@ -77,7 +77,11 @@ class Tasks extends React.Component {
         key: 'actions', label: 'Actions', sortable: false, filterable: false, sx: { py: 0 },
         render: (task) => (
           <div style={{ display: 'flex' }}>
-            <LogButton onClick={() => this.onLogClick(task)} label={`View details and log for ${task.Name}`} />
+            <LogButton
+              onClick={() => this.onLogClick(task)}
+              disabled={task.Status === 'Assigned'}
+              label={`View details and log for ${task.Name}`}
+            />
             <BuildButton
               onClick={() => this.props.onBuildClick?.(task)}
               disabled={!task.BuildId}
